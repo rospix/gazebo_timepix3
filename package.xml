@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<package>
+  <name>gazebo_timepix</name>
+  <version>0.0.0</version>
+  <description>Timepix simulation for Gazebo</description>
+  <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>
+
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>gazebo_ros</build_depend>
+  <build_depend>cmake_modules</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>sitl_gazebo</build_depend>
+  <build_depend>protobuf-dev</build_depend>
+  <build_depend>message_generation</build_depend> 
+  <build_depend>std_msgs</build_depend>
+  <build_depend>gazebo_rad_msgs</build_depend>
+
+  <run_depend>sitl_gazebo</run_depend>
+  <run_depend>cmake_modules</run_depend>
+  <run_depend>gazebo_ros</run_depend>
+  <run_depend>roscpp</run_depend>
+  <run_depend>message_generation</run_depend>
+  <run_depend>message_runtime</run_depend>
+  <run_depend>std_msgs</run_depend>
+  <run_depend>gazebo_rad_msgs</run_depend>
+
+  <export>
+    <gazebo_ros
+      plugin_path="${prefix}/lib"
+      gazebo_media_path="${prefix}"
+      gazebo_model_path="${prefix}/models"
+      />
+  </export>
+
+</package>
