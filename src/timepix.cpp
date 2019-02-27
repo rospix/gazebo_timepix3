@@ -12,9 +12,13 @@
 #include <gazebo/physics/physics.hh>
 #include <ignition/math.hh>
 
+#include <std_msgs/Char.h>
+
 #include <mutex>
 
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
+
+#include "source.h"
 
 namespace gazebo
 {
@@ -40,7 +44,14 @@ namespace gazebo
     virtual void OnUpdate(const common::UpdateInfo &);
 
   private:
-    std::string namespace_;
+    std::string                            namespace_;
+    std::uniform_real_distribution<double> rand_dbl;
+    std::mt19937                           rand_gen;
+
+    std::set<unsigned int> source_ids;
+
+    double sensor_size;
+    double sensor_thickness;
 
     physics::EntityPtr modelEntity;
 
@@ -81,11 +92,18 @@ namespace gazebo
 
   void Timepix::radiationCallback(RadiationSourceConstPtr &msg) {
 
-    ROS_INFO_STREAM("x: " << msg->x());
-    ROS_INFO_STREAM("y: " << msg->x());
-    ROS_INFO_STREAM("z: " << msg->x());
-    ROS_INFO_STREAM("activity: " << msg->activity());
-    ROS_INFO_STREAM("material: " << msg->material());
+    /* ROS_INFO_STREAM("x: " << msg->x()); */
+    /* ROS_INFO_STREAM("y: " << msg->x()); */
+    /* ROS_INFO_STREAM("z: " << msg->x()); */
+    /* ROS_INFO_STREAM("activity: " << msg->activity()); */
+    /* ROS_INFO_STREAM("material: " << msg->material()); */
+    /* ROS_INFO_STREAM("ID: " << msg->id()); */
+
+    // insert a newly encountered source into list of source_ids
+    if (source_ids.find(msg->id()) == source_ids.end()) {
+      source_ids.insert(msg->id());
+      ROS_INFO("[Timepix #%u]: Registered source #%u", node_handle_->GetId(), msg->id());
+    }
   }
 
   //}
@@ -111,11 +129,14 @@ namespace gazebo
     node_handle_ = transport::NodePtr(new transport::Node());
     node_handle_->Init();
 
+
     updateConnection_ = event::Events::ConnectWorldUpdateBegin(boost::bind(&Timepix::OnUpdate, this, _1));
 
     this->modelName = model_->GetName();
 
     this->rad_sub = node_handle_->Subscribe("~/radiation", &Timepix::radiationCallback, this, false);
+
+    this->test_pub = this->rosNode->advertise<std_msgs::Char>("/radiation/test", 10);
 
     this->rosQueueThread = std::thread(std::bind(&Timepix::QueueThread, this));
 
