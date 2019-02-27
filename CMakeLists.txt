@@ -45,6 +45,7 @@ link_directories(${GAZEBO_LIBRARY_DIRS})
 add_library(
   ${PROJECT_NAME}
   src/timepix.cpp
+  src/geometry_utils.cpp
   )
 
 target_link_libraries(${PROJECT_NAME}
