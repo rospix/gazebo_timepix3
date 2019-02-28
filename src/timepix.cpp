@@ -103,13 +103,6 @@ namespace gazebo
 
   void Timepix::radiationCallback(RadiationSourceConstPtr &msg) {
 
-    /* ROS_INFO_STREAM("x: " << msg->x()); */
-    /* ROS_INFO_STREAM("y: " << msg->x()); */
-    /* ROS_INFO_STREAM("z: " << msg->x()); */
-    /* ROS_INFO_STREAM("activity: " << msg->activity()); */
-    /* ROS_INFO_STREAM("material: " << msg->material()); */
-    /* ROS_INFO_STREAM("ID: " << msg->id()); */
-
     // insert a newly encountered source into set of sources
     if (sources.find(msg->id()) == sources.end()) {
       Eigen::Vector3d pos(msg->x(), msg->y(), msg->z());
@@ -205,6 +198,9 @@ namespace gazebo
 
     /* last_time_ = current_time; */
 
+
+    /* simulate //{ */
+
     if (sources.empty()) {
       return;
     }
@@ -214,18 +210,37 @@ namespace gazebo
       it->second.apparent_activity = (it->second.activity / 4 * M_PI) * rectSolidAngle(this->front, it->second.position);
 
       if (it->second.last_ray_time.Double() + (1.0 / it->second.apparent_activity) < current_time.Double()) {
-        Eigen::Vector3d hit_point = sampleRectangle(this->front);
-        RadiationVisualizer::visualizePoint(point_visualizer_pub, hit_point);
-        Ray r = Ray::twopointCast(it->second.position, hit_point);
+        // cast ray from source to the front rectangle
+        Eigen::Vector3d front_intersect = sampleRectangle(this->front);
+        RadiationVisualizer::visualizePoint(point_visualizer_pub, front_intersect);
+        Ray r = Ray::twopointCast(it->second.position, front_intersect);
         RadiationVisualizer::visualizeRay(ray_visualizer_pub, r);
         it->second.last_ray_time = current_time;
+
+        // check intersection with back side
+        boost::optional<Eigen::Vector3d> back_intersect = this->back.plane.intersectionRay(r);
+        if (!back_intersect) {
+          ROS_WARN("No intersection with sensor back");
+          // check intersection with sides
+
+        } else {
+          Eigen::Vector3d projection = back.basis.inverse() * (back.points[3] - (*back_intersect));
+          /* ROS_INFO("Intersect in basis: %.6f, %.6f, %.6f", projection[0], projection[1], projection[2]); */
+          if (0 <= projection[0] <= 1.0 and 0 <= projection[1] <= 1.0) {
+            double intersection_length = (*back_intersect - front_intersect).norm();
+            ROS_INFO("Intersection length: %.7f", intersection_length);
+          }
+        }
       }
     }
     if (current_time.Double() > last_time_.Double() + 0.01) {
       RadiationVisualizer::visualizeRect(sensor_front_visualizer_pub, this->front, 0.0, 0.2, 1.0);
       RadiationVisualizer::visualizeRect(sensor_back_visualizer_pub, this->back, 0.0, 0.6, 1.0);
     }
+    //}
   }
+  //}
+
 
   void Timepix::updatePosition(ignition::math::Pose3d world_pose) {
     Eigen::Vector3d A(sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
@@ -245,10 +260,7 @@ namespace gazebo
     C = T * Q * C;
     D = T * Q * D;
 
-    this->front.points[0] = A;
-    this->front.points[1] = B;
-    this->front.points[2] = C;
-    this->front.points[3] = D;
+    this->front = Rectangle(A, B, C, D);
 
     Eigen::Vector3d E(-sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
     Eigen::Vector3d F(-sensor_thickness / 2.0, sensor_size / 2.0, sensor_size / 2.0);
@@ -260,10 +272,7 @@ namespace gazebo
     G = T * Q * G;
     H = T * Q * H;
 
-    this->back.points[0] = E;
-    this->back.points[1] = F;
-    this->back.points[2] = G;
-    this->back.points[3] = H;
+    this->back = Rectangle(E, F, G, H);
 
     sides[0] = Rectangle(A, E, H, D);
     sides[1] = Rectangle(B, F, E, A);
@@ -271,7 +280,6 @@ namespace gazebo
     sides[3] = Rectangle(D, H, C, G);
   }
 
-  //}
 
 }  // namespace gazebo
 

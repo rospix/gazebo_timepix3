@@ -36,7 +36,7 @@ boost::optional<Eigen::Vector3d> Plane::intersectionRay(Ray r, double epsilon) {
   Eigen::Vector3d p0l0 = this->point - r.origin;
   double          t    = this->normal.dot(p0l0) / denom;
   if (t >= 0) {
-    return boost::optional<Eigen::Vector3d>{t * r.direction + r.origin};
+    return Eigen::Vector3d(t * r.direction + r.origin);
   } else {
     return boost::optional<Eigen::Vector3d>{};
   }
@@ -50,8 +50,8 @@ Rectangle::~Rectangle() {
 
 Rectangle::Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Eigen::Vector3d D) {
 
-  Eigen::Vector3d v1 = B - A;
-  Eigen::Vector3d v2 = C - A;
+  Eigen::Vector3d v1 = D - A;
+  Eigen::Vector3d v2 = D - C;
 
   this->points.push_back(A);
   this->points.push_back(B);
@@ -61,20 +61,16 @@ Rectangle::Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Ei
   this->normal_vector = v1.cross(v2);
   this->normal_vector.normalize();
 
+  if (A == B or A == C or A == D or B == C or B == D or C == D) {
+    return;
+  }
+
   this->plane = Plane(A, normal_vector);
 
-  Eigen::Vector3d b1;
-  if (abs(normal_vector[0]) > 1e-3 or abs(normal_vector[1]) > 1e-3) {
-    b1 = Eigen::Vector3d(-normal_vector[1], normal_vector[0], normal_vector[2]);
-  } else {
-    b1 = Eigen::Vector3d(normal_vector[0], -normal_vector[2], normal_vector[1]);
-  }
-  Eigen::Vector3d b2 = normal_vector.cross(b1);
-  b2.normalize();
-
-  this->basis.col(0) << b1;
-  this->basis.col(1) << b2;
+  this->basis.col(0) << D - A;
+  this->basis.col(1) << D - C;
   this->basis.col(2) << normal_vector;
+  /* this->basis.transposeInPlace(); */
 
   this->projector = basis * basis.transpose();
 }
