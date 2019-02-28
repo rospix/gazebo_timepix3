@@ -8,13 +8,16 @@ Ray::Ray() {
   this->energy    = 0.0;
 }
 
+Ray::~Ray() {
+}
+
 Ray::Ray(Eigen::Vector3d origin, Eigen::Vector3d direction, double energy) {
   this->origin    = origin;
   this->direction = direction;
   this->energy    = energy;
 }
 
-Ray::~Ray() {
+Plane::Plane() {
 }
 
 Plane::Plane(Eigen::Vector3d point, Eigen::Vector3d normal) {
@@ -39,20 +42,26 @@ boost::optional<Eigen::Vector3d> Plane::intersectionRay(Ray r, double epsilon) {
   }
 }
 
-Rectangle::Rectangle(std::vector<Eigen::Vector3d> points) {
-  if (points.size() != 4) {
-    std::cout << "Rectangle: can only create rectangle with 4 points!\n";
-  }
+Rectangle::Rectangle() {
+}
 
-  Eigen::Vector3d v1 = points[1] - points[0];
-  Eigen::Vector3d v2 = points[2] - points[0];
+Rectangle::~Rectangle() {
+}
 
-  this->zero_point = points[0];
+Rectangle::Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Eigen::Vector3d D) {
+
+  Eigen::Vector3d v1 = B - A;
+  Eigen::Vector3d v2 = C - A;
+
+  this->points.push_back(A);
+  this->points.push_back(B);
+  this->points.push_back(C);
+  this->points.push_back(D);
 
   this->normal_vector = v1.cross(v2);
   this->normal_vector.normalize();
 
-  this->plane = Plane(zero_point, normal_vector);
+  this->plane = Plane(A, normal_vector);
 
   Eigen::Vector3d b1;
   if (abs(normal_vector[0]) > 1e-3 or abs(normal_vector[1]) > 1e-3) {
@@ -65,7 +74,70 @@ Rectangle::Rectangle(std::vector<Eigen::Vector3d> points) {
 
   this->basis.col(0) << b1;
   this->basis.col(1) << b2;
-  this->basis.row(2) << normal_vector;
+  this->basis.col(2) << normal_vector;
 
   this->projector = basis * basis.transpose();
+}
+
+double haversin(double angle) {
+  return (1.0 - std::cos(angle)) / 2.0;
+}
+
+double invHaversin(double angle) {
+  return 2.0 * std::asin(std::sqrt(angle));
+}
+
+double triangleArea(double a, double b, double c) {
+  double s = (a + b + c) / 2.0;
+  return std::sqrt(s * (s - a) * (s - b) * (s - c));
+}
+
+
+double vectorAngle(Eigen::Vector3d v1, Eigen::Vector3d v2) {
+  return acos(v1.dot(v2) / (v1.norm() * v2.norm()));
+}
+
+double solidAngle(double a, double b, double c) {
+  return invHaversin((haversin(c) - haversin(a - b)) / (std::sin(a) * std::sin(b)));
+}
+
+double sphericalTriangleArea(Eigen::Vector3d a, Eigen::Vector3d b, Eigen::Vector3d c) {
+  double ab = vectorAngle(a, b);
+  double bc = vectorAngle(b, c);
+  double ca = vectorAngle(c, a);
+
+  if (ab < 1e-3 and bc < 1e-3 and ca < 1e-3) {
+    return triangleArea(ab, bc, ca);
+  }
+
+  double A = solidAngle(ca, ab, bc);
+  double B = solidAngle(ab, bc, ca);
+  double C = solidAngle(bc, ca, ab);
+
+  return A + B + C - M_PI;
+}
+
+double rectSolidAngle(Rectangle r, Eigen::Vector3d center) {
+  Eigen::Vector3d a = r.points[0] - center;
+  Eigen::Vector3d b = r.points[1] - center;
+  Eigen::Vector3d c = r.points[2] - center;
+  Eigen::Vector3d d = r.points[3] - center;
+
+  a.normalize();
+  b.normalize();
+  c.normalize();
+  d.normalize();
+
+  double t1 = sphericalTriangleArea(a, b, c);
+  double t2 = sphericalTriangleArea(c, d, a);
+
+  return t1 + t2;
+}
+
+Eigen::Vector3d pos3toVector3d(ignition::math::Pose3d gzpos) {
+  Eigen::Vector3d v;
+  v[0] = gzpos.Pos().X();
+  v[1] = gzpos.Pos().Y();
+  v[2] = gzpos.Pos().Z();
+  return v;
 }

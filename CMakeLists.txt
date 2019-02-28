@@ -46,6 +46,8 @@ add_library(
   ${PROJECT_NAME}
   src/timepix.cpp
   src/geometry_utils.cpp
+  src/radiation_utils.cpp
+  src/rviz_visualizer.cpp
   )
 
 target_link_libraries(${PROJECT_NAME}

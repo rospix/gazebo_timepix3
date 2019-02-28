@@ -2,9 +2,11 @@
 #define GEOMETRY_UTILS_H
 
 #include <vector>
+#include <math.h>
 #include <boost/optional.hpp>
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Dense>
+#include <ignition/math.hh>
 
 class Ray {
 public:
@@ -29,9 +31,9 @@ public:
 
 class Plane {
 public:
-  Plane(Eigen::Vector3d point, Eigen::Vector3d normal);
   Plane();
   ~Plane();
+  Plane(Eigen::Vector3d point, Eigen::Vector3d normal);
 
   Eigen::Vector3d point;
   Eigen::Vector3d normal;
@@ -42,11 +44,11 @@ public:
 
 class Rectangle {
 public:
-  Rectangle(std::vector<Eigen::Vector3d> points);
+  Rectangle();
   ~Rectangle();
+  Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Eigen::Vector3d D);
 
   Eigen::Vector3d normal_vector;
-  Eigen::Vector3d zero_point;
 
   Eigen::Matrix3d basis;
   Eigen::Matrix3d projector;
@@ -54,5 +56,17 @@ public:
   Plane                        plane;
   std::vector<Eigen::Vector3d> points;
 };
+
+double haversin(double angle);
+double invHaversin(double angle);
+
+double vectorAngle(Eigen::Vector3d v1, Eigen::Vector3d v2);
+double solidAngle(double a, double b, double c);
+double rectSolidAngle(Rectangle r, Eigen::Vector3d center);
+
+double triangleArea(double a, double b, double c);
+double sphericalTriangleArea(Eigen::Vector3d a, Eigen::Vector3d b, Eigen::Vector3d c);
+
+Eigen::Vector3d pos3toVector3d(ignition::math::Pose3d gzpos);
 
 #endif

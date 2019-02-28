@@ -11,18 +11,22 @@
 #include <gazebo/msgs/msgs.hh>
 #include <gazebo/physics/physics.hh>
 #include <ignition/math.hh>
+#include <tf/tf.h>
 
-#include <std_msgs/Char.h>
+#include <std_msgs/Float64.h>
 
 #include <mutex>
 
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
 
-#include "source.h"
+#include <geometry_utils.h>
+#include <radiation_utils.h>
+#include <rviz_visualizer.h>
+
+#define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
 
 namespace gazebo
 {
-
   /* class Timepix //{ */
 
   class GAZEBO_VISIBLE Timepix : public ModelPlugin {
@@ -48,10 +52,15 @@ namespace gazebo
     std::uniform_real_distribution<double> rand_dbl;
     std::mt19937                           rand_gen;
 
-    std::set<unsigned int> source_ids;
+    std::map<unsigned int, Source> sources;
 
-    double sensor_size;
-    double sensor_thickness;
+    double                 sensor_size;
+    double                 sensor_thickness;
+    Rectangle              front, back;
+    std::vector<Rectangle> sides;
+
+    void            updatePosition(ignition::math::Pose3d world_pose);
+    Eigen::Vector3d sampleRectangle(Rectangle rect);
 
     physics::EntityPtr modelEntity;
 
@@ -69,6 +78,8 @@ namespace gazebo
     ros::CallbackQueue               rosQueue;
     std::thread                      rosQueueThread;
     ros::Publisher                   test_pub;
+
+    ros::Publisher sources_visualizer_pub, ray_visualizer_pub, point_visualizer_pub, sensor_front_visualizer_pub, sensor_back_visualizer_pub;
 
     gazebo_rad_msgs::msgs::RadiationSource radiation_msg;
 
@@ -99,11 +110,26 @@ namespace gazebo
     /* ROS_INFO_STREAM("material: " << msg->material()); */
     /* ROS_INFO_STREAM("ID: " << msg->id()); */
 
-    // insert a newly encountered source into list of source_ids
-    if (source_ids.find(msg->id()) == source_ids.end()) {
-      source_ids.insert(msg->id());
+    // insert a newly encountered source into set of sources
+    if (sources.find(msg->id()) == sources.end()) {
+      Eigen::Vector3d pos(msg->x(), msg->y(), msg->z());
+
+      Source s(msg->material(), msg->activity(), pos);
+      sources.insert(std::pair<unsigned int, Source>(msg->id(), s));
+
       ROS_INFO("[Timepix #%u]: Registered source #%u", node_handle_->GetId(), msg->id());
     }
+    RadiationVisualizer::visualizeSources(sources_visualizer_pub, sources);
+  }
+
+  Eigen::Vector3d Timepix::sampleRectangle(Rectangle r) {
+    Eigen::Vector3d ab = r.points[1] - r.points[0];
+    Eigen::Vector3d ad = r.points[3] - r.points[0];
+
+    double k1 = rand_dbl(rand_gen);
+    double k2 = rand_dbl(rand_gen);
+
+    return r.points[0] + k1 * ab + k2 * ad;
   }
 
   //}
@@ -129,16 +155,38 @@ namespace gazebo
     node_handle_ = transport::NodePtr(new transport::Node());
     node_handle_->Init();
 
+    rand_dbl = std::uniform_real_distribution<double>(0, 1);
 
     updateConnection_ = event::Events::ConnectWorldUpdateBegin(boost::bind(&Timepix::OnUpdate, this, _1));
 
     this->modelName = model_->GetName();
 
+    this->sensor_size      = 0.01408;
+    this->sensor_thickness = 300e-06;
+
     this->rad_sub = node_handle_->Subscribe("~/radiation", &Timepix::radiationCallback, this, false);
 
-    this->test_pub = this->rosNode->advertise<std_msgs::Char>("/radiation/test", 10);
+    this->test_pub                    = this->rosNode->advertise<std_msgs::Float64>("/radiation/test", 100);
+    this->sources_visualizer_pub      = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/sources", 100);
+    this->ray_visualizer_pub          = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/ray", 100);
+    this->point_visualizer_pub        = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/point", 100);
+    this->sensor_front_visualizer_pub = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/sensor_front", 100);
+    this->sensor_back_visualizer_pub  = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/sensor_back", 100);
 
     this->rosQueueThread = std::thread(std::bind(&Timepix::QueueThread, this));
+
+    Eigen::Vector3d A = pos3toVector3d(model_->WorldPose());
+    Eigen::Vector3d B = pos3toVector3d(model_->WorldPose());
+    Eigen::Vector3d C = pos3toVector3d(model_->WorldPose());
+    Eigen::Vector3d D = pos3toVector3d(model_->WorldPose());
+
+    this->front = Rectangle(A, B, C, D);
+    this->back  = Rectangle(A, B, C, D);
+
+    for (int i = 0; i < 4; i++) {
+      this->sides.push_back(Rectangle(A, B, C, D));
+    }
+    updatePosition(model_->WorldPose());
 
     ROS_INFO("[Timepix]: initialized");
   }
@@ -152,10 +200,78 @@ namespace gazebo
     common::Time current_time = world_->SimTime();
 
     ignition::math::Pose3d T_W_I = model_->WorldPose();
+    updatePosition(T_W_I);
 
-    last_time_ = current_time;
+
+    /* last_time_ = current_time; */
+
+    if (sources.empty()) {
+      return;
+    }
+
+    for (std::map<unsigned int, Source>::iterator it = sources.begin(); it != sources.end(); it++) {
+
+      it->second.apparent_activity = (it->second.activity / 4 * M_PI) * rectSolidAngle(this->front, it->second.position);
+
+      if (it->second.last_ray_time.Double() + (1.0 / it->second.apparent_activity) < current_time.Double()) {
+        Eigen::Vector3d hit_point = sampleRectangle(this->front);
+        RadiationVisualizer::visualizePoint(point_visualizer_pub, hit_point);
+        Ray r = Ray::twopointCast(it->second.position, hit_point);
+        RadiationVisualizer::visualizeRay(ray_visualizer_pub, r);
+        it->second.last_ray_time = current_time;
+      }
+    }
+    if (current_time.Double() > last_time_.Double() + 0.01) {
+      RadiationVisualizer::visualizeRect(sensor_front_visualizer_pub, this->front, 0.0, 0.2, 1.0);
+      RadiationVisualizer::visualizeRect(sensor_back_visualizer_pub, this->back, 0.0, 0.6, 1.0);
+    }
+  }
+
+  void Timepix::updatePosition(ignition::math::Pose3d world_pose) {
+    Eigen::Vector3d A(sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
+    Eigen::Vector3d B(sensor_thickness / 2.0, sensor_size / 2.0, sensor_size / 2.0);
+    Eigen::Vector3d C(sensor_thickness / 2.0, sensor_size / 2.0, -sensor_size / 2.0);
+    Eigen::Vector3d D(sensor_thickness / 2.0, -sensor_size / 2.0, -sensor_size / 2.0);
+
+    Eigen::Vector3d pos = pos3toVector3d(world_pose);
+    Eigen::Affine3d T;
+    T = Eigen::Translation3d(pos);
+
+    ignition::math::Quaterniond iq = world_pose.Rot();
+    Eigen::Quaterniond          Q(iq.W(), iq.X(), iq.Y(), iq.Z());
+
+    A = T * Q * A;
+    B = T * Q * B;
+    C = T * Q * C;
+    D = T * Q * D;
+
+    this->front.points[0] = A;
+    this->front.points[1] = B;
+    this->front.points[2] = C;
+    this->front.points[3] = D;
+
+    Eigen::Vector3d E(-sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
+    Eigen::Vector3d F(-sensor_thickness / 2.0, sensor_size / 2.0, sensor_size / 2.0);
+    Eigen::Vector3d G(-sensor_thickness / 2.0, sensor_size / 2.0, -sensor_size / 2.0);
+    Eigen::Vector3d H(-sensor_thickness / 2.0, -sensor_size / 2.0, -sensor_size / 2.0);
+
+    E = T * Q * E;
+    F = T * Q * F;
+    G = T * Q * G;
+    H = T * Q * H;
+
+    this->back.points[0] = E;
+    this->back.points[1] = F;
+    this->back.points[2] = G;
+    this->back.points[3] = H;
+
+    sides[0] = Rectangle(A, E, H, D);
+    sides[1] = Rectangle(B, F, E, A);
+    sides[2] = Rectangle(C, G, F, B);
+    sides[3] = Rectangle(D, H, C, G);
   }
 
   //}
 
 }  // namespace gazebo
+
