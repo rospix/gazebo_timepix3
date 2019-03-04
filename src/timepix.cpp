@@ -94,6 +94,12 @@ namespace gazebo
   }
 
   Timepix::~Timepix() {
+    // end all ROS related stuff
+    this->rosNode->shutdown();
+    // wait for threads to finish
+    this->rosQueueThread.join();
+    this->callback_queue_thread_.join();
+    // destroy connection to gazebo
     updateConnection_->~Connection();
   }
 
@@ -198,7 +204,6 @@ namespace gazebo
 
     /* last_time_ = current_time; */
 
-
     /* simulate //{ */
 
     if (sources.empty()) {
@@ -222,6 +227,14 @@ namespace gazebo
         if (!back_intersect) {
           ROS_WARN("No intersection with sensor back");
           // check intersection with sides
+          for (size_t i = 0; i < this->sides.size(); i++) {
+            boost::optional<Eigen::Vector3d> side_intersect = this->sides[i].plane.intersectionRay(r);
+            if (side_intersect) {
+              double intersection_length = (front_intersect - side_intersect.get()).norm();
+              ROS_INFO("Intersection length: %.7f", intersection_length);
+              break;
+            }
+          }
 
         } else {
           Eigen::Vector3d projection = back.basis.inverse() * (back.points[3] - (*back_intersect));
@@ -241,7 +254,7 @@ namespace gazebo
   }
   //}
 
-
+  /* updatePosition() */  //{
   void Timepix::updatePosition(ignition::math::Pose3d world_pose) {
     Eigen::Vector3d A(sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
     Eigen::Vector3d B(sensor_thickness / 2.0, sensor_size / 2.0, sensor_size / 2.0);
@@ -279,7 +292,7 @@ namespace gazebo
     sides[2] = Rectangle(C, G, F, B);
     sides[3] = Rectangle(D, H, C, G);
   }
-
+  //}
 
 }  // namespace gazebo
 
