@@ -5,7 +5,7 @@
 #include <set>
 #include <eigen3/Eigen/Core>
 #include <geometry_utils.h>
-#include <gazebo/common/Time.hh>
+#include <ros/time.h>
 
 class Source {
 public:
@@ -13,11 +13,11 @@ public:
   ~Source();
   Source(std::string material = "Am", double activity = 10e9, Eigen::Vector3d position = Eigen::Vector3d(0.0, 0.0, 0.0));
 
-  std::string          material;
-  double               activity;
-  Eigen::Vector3d      position;
-  double               apparent_activity = 0.0;
-  gazebo::common::Time last_ray_time     = 0.0;
+  std::string     material;
+  double          activity;
+  Eigen::Vector3d position;
+  double          apparent_activity = 0.0;
+  ros::Time       last_contact      = ros::TIME_MIN;
 };
 
 #endif

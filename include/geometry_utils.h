@@ -21,7 +21,7 @@ public:
   static Ray twopointCast(Eigen::Vector3d pointFrom, Eigen::Vector3d pointTo) {
     Eigen::Vector3d origin    = pointFrom;
     Eigen::Vector3d direction = (pointTo - pointFrom);
-    direction.normalize();
+    /* direction.normalize(); */
     return Ray(origin, direction);
   }
   static Ray directionCast(Eigen::Vector3d origin, Eigen::Vector3d direction) {

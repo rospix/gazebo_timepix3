@@ -24,6 +24,7 @@
 #include <rviz_visualizer.h>
 
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
+#define STEP_DURATION 0.01                 // [s]
 
 namespace gazebo
 {
@@ -38,6 +39,15 @@ namespace gazebo
       static const double timeout = 0.01;
       while (this->rosNode->ok()) {
         this->rosQueue.callAvailable(ros::WallDuration(timeout));
+      }
+    }
+
+    void raytracerLoop() {
+      ros::Duration stepDuration(STEP_DURATION);
+      while (this->rosNode->ok()) {
+        updatePosition(this->model_->WorldPose());
+        simulate();
+        stepDuration.sleep();
       }
     }
 
@@ -77,6 +87,7 @@ namespace gazebo
     std::unique_ptr<ros::NodeHandle> rosNode;
     ros::CallbackQueue               rosQueue;
     std::thread                      rosQueueThread;
+    std::thread                      simulationThread;
     ros::Publisher                   test_pub;
 
     ros::Publisher sources_visualizer_pub, ray_visualizer_pub, point_visualizer_pub, sensor_front_visualizer_pub, sensor_back_visualizer_pub;
@@ -87,6 +98,7 @@ namespace gazebo
     common::Time last_time_;
 
     std::string modelName;
+    void        simulate();
   };
 
   GZ_REGISTER_MODEL_PLUGIN(Timepix)
@@ -99,6 +111,7 @@ namespace gazebo
     // wait for threads to finish
     this->rosQueueThread.join();
     this->callback_queue_thread_.join();
+    this->simulationThread.detach();
     // destroy connection to gazebo
     updateConnection_->~Connection();
   }
@@ -109,6 +122,7 @@ namespace gazebo
 
   void Timepix::radiationCallback(RadiationSourceConstPtr &msg) {
 
+    ros::Time curr_time = ros::Time::now();
     // insert a newly encountered source into set of sources
     if (sources.find(msg->id()) == sources.end()) {
       Eigen::Vector3d pos(msg->x(), msg->y(), msg->z());
@@ -118,7 +132,8 @@ namespace gazebo
 
       ROS_INFO("[Timepix #%u]: Registered source #%u", node_handle_->GetId(), msg->id());
     }
-    RadiationVisualizer::visualizeSources(sources_visualizer_pub, sources);
+    // store last time the source sent a msg
+    sources.find(msg->id())->second.last_contact = curr_time;
   }
 
   Eigen::Vector3d Timepix::sampleRectangle(Rectangle r) {
@@ -160,7 +175,8 @@ namespace gazebo
 
     this->modelName = model_->GetName();
 
-    this->sensor_size      = 0.01408;
+    this->sensor_size = 0.01408;
+    /* this->sensor_size      = 1.408; */
     this->sensor_thickness = 300e-06;
 
     this->rad_sub = node_handle_->Subscribe("~/radiation", &Timepix::radiationCallback, this, false);
@@ -185,7 +201,9 @@ namespace gazebo
     for (int i = 0; i < 4; i++) {
       this->sides.push_back(Rectangle(A, B, C, D));
     }
-    updatePosition(model_->WorldPose());
+
+    this->simulationThread = std::thread(boost::bind(&Timepix::raytracerLoop, this));
+    /* updatePosition(model_->WorldPose()); */
 
     ROS_INFO("[Timepix]: initialized");
   }
@@ -196,62 +214,85 @@ namespace gazebo
 
   void Timepix::OnUpdate(const common::UpdateInfo &) {
 
-    common::Time current_time = world_->SimTime();
+    common::Time           current_time = world_->SimTime();
+    ignition::math::Pose3d T_W_I        = model_->WorldPose();
+  }
+  //}
 
-    ignition::math::Pose3d T_W_I = model_->WorldPose();
-    updatePosition(T_W_I);
-
-
-    /* last_time_ = current_time; */
-
-    /* simulate //{ */
-
-    if (sources.empty()) {
+  void Timepix::simulate() {
+    if (this->sources.empty()) {
       return;
     }
 
-    for (std::map<unsigned int, Source>::iterator it = sources.begin(); it != sources.end(); it++) {
+    ros::Time curr_time = ros::Time::now();
+    for (auto source = sources.begin(); source != sources.end();) {
+      if (source->second.last_contact.toSec() + STEP_DURATION < curr_time.toSec()) {
+        ROS_INFO("[Timepix #%u]: No longer tracking source #%u", node_handle_->GetId(), source->first);
+        source = sources.erase(source);
+        continue;
+      }
+      source->second.apparent_activity = (source->second.activity / 4 * M_PI) * rectSolidAngle(this->front, source->second.position);
+      ROS_INFO("[Timepix #%u]: Source #%u requires %.0f samples", node_handle_->GetId(), source->first, source->second.apparent_activity * STEP_DURATION);
+      double iteration_start = ros::Time::now().toSec();
 
-      it->second.apparent_activity = (it->second.activity / 4 * M_PI) * rectSolidAngle(this->front, it->second.position);
-
-      if (it->second.last_ray_time.Double() + (1.0 / it->second.apparent_activity) < current_time.Double()) {
-        // cast ray from source to the front rectangle
+      // Each source gets 1/n size of step duration
+      // TODO equalize the percent slow for all sources
+      for (int i = 0; i < source->second.apparent_activity * STEP_DURATION; i++) {
         Eigen::Vector3d front_intersect = sampleRectangle(this->front);
-        RadiationVisualizer::visualizePoint(point_visualizer_pub, front_intersect);
-        Ray r = Ray::twopointCast(it->second.position, front_intersect);
-        RadiationVisualizer::visualizeRay(ray_visualizer_pub, r);
-        it->second.last_ray_time = current_time;
 
-        // check intersection with back side
-        boost::optional<Eigen::Vector3d> back_intersect = this->back.plane.intersectionRay(r);
-        if (!back_intersect) {
-          ROS_WARN("No intersection with sensor back");
-          // check intersection with sides
-          for (size_t i = 0; i < this->sides.size(); i++) {
-            boost::optional<Eigen::Vector3d> side_intersect = this->sides[i].plane.intersectionRay(r);
-            if (side_intersect) {
-              double intersection_length = (front_intersect - side_intersect.get()).norm();
-              ROS_INFO("Intersection length: %.7f", intersection_length);
-              break;
-            }
-          }
-
-        } else {
-          Eigen::Vector3d projection = back.basis.inverse() * (back.points[3] - (*back_intersect));
-          /* ROS_INFO("Intersect in basis: %.6f, %.6f, %.6f", projection[0], projection[1], projection[2]); */
-          if (0 <= projection[0] <= 1.0 and 0 <= projection[1] <= 1.0) {
-            double intersection_length = (*back_intersect - front_intersect).norm();
-            ROS_INFO("Intersection length: %.7f", intersection_length);
-          }
+        Ray r = Ray::twopointCast(source->second.position, front_intersect);
+        if (ros::Time::now().toSec() > iteration_start + (STEP_DURATION / sources.size())) {
+          ROS_WARN("[Timepix #%u]: Source #%u only recieved %d samples (%.3f%% of original)", node_handle_->GetId(), source->first, i,
+                   ((100.0 * i) / (source->second.apparent_activity * STEP_DURATION)));
+          break;
         }
       }
+      source++;
     }
-    if (current_time.Double() > last_time_.Double() + 0.01) {
-      RadiationVisualizer::visualizeRect(sensor_front_visualizer_pub, this->front, 0.0, 0.2, 1.0);
-      RadiationVisualizer::visualizeRect(sensor_back_visualizer_pub, this->back, 0.0, 0.6, 1.0);
-    }
-    //}
-  }
+    /* RadiationVisualizer::visualizeSources(sources_visualizer_pub, sources); */
+
+    /*     for (std::map<unsigned int, Source>::iterator it = sources.begin(); it != sources.end(); it++) { */
+
+    /*       it->second.apparent_activity = (it->second.activity / 4 * M_PI) * rectSolidAngle(this->front, it->second.position); */
+
+    /*       if (it->second.last_ray_time.Double() + (1.0 / it->second.apparent_activity) < current_time.Double()) { */
+    /*         // cast ray from source to the front rectangle */
+    /*         Eigen::Vector3d front_intersect = sampleRectangle(this->front); */
+    /*         RadiationVisualizer::visualizePoint(point_visualizer_pub, front_intersect); */
+    /*         Ray r = Ray::twopointCast(it->second.position, front_intersect); */
+    /*         RadiationVisualizer::visualizeRay(ray_visualizer_pub, r); */
+    /*         it->second.last_ray_time = current_time; */
+
+    /*         // check intersection with back side */
+    /*         boost::optional<Eigen::Vector3d> back_intersect = this->back.plane.intersectionRay(r); */
+    /*         if (!back_intersect) { */
+    /*           ROS_WARN("No intersection with sensor back"); */
+    /*           // check intersection with sides */
+    /*           for (size_t i = 0; i < this->sides.size(); i++) { */
+    /*             boost::optional<Eigen::Vector3d> side_intersect = this->sides[i].plane.intersectionRay(r); */
+    /*             if (side_intersect) { */
+    /*               double intersection_length = (front_intersect - side_intersect.get()).norm(); */
+    /*               ROS_INFO("Intersection length: %.7f", intersection_length); */
+    /*               break; */
+    /*             } */
+    /*           } */
+
+    /*         } else { */
+    /*           Eigen::Vector3d projection = back.basis.inverse() * (back.points[3] - (*back_intersect)); */
+    /*           /1* ROS_INFO("Intersect in basis: %.6f, %.6f, %.6f", projection[0], projection[1], projection[2]); *1/ */
+    /*           if (0 <= projection[0] <= 1.0 and 0 <= projection[1] <= 1.0) { */
+    /*             double intersection_length = (*back_intersect - front_intersect).norm(); */
+    /*             ROS_INFO("Intersection length: %.7f", intersection_length); */
+    /*           } */
+    /*         } */
+    /*       } */
+    /*     } */
+    /*     if (current_time.Double() > last_time_.Double() + 0.01) { */
+    /*       RadiationVisualizer::visualizeRect(sensor_front_visualizer_pub, this->front, 0.0, 0.2, 1.0); */
+    /*       RadiationVisualizer::visualizeRect(sensor_back_visualizer_pub, this->back, 0.0, 0.6, 1.0); */
+    /*     } */
+    /*     //} */
+  }  // namespace gazebo
   //}
 
   /* updatePosition() */  //{
@@ -273,8 +314,6 @@ namespace gazebo
     C = T * Q * C;
     D = T * Q * D;
 
-    this->front = Rectangle(A, B, C, D);
-
     Eigen::Vector3d E(-sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
     Eigen::Vector3d F(-sensor_thickness / 2.0, sensor_size / 2.0, sensor_size / 2.0);
     Eigen::Vector3d G(-sensor_thickness / 2.0, sensor_size / 2.0, -sensor_size / 2.0);
@@ -285,7 +324,8 @@ namespace gazebo
     G = T * Q * G;
     H = T * Q * H;
 
-    this->back = Rectangle(E, F, G, H);
+    this->front = Rectangle(A, B, C, D);
+    this->back  = Rectangle(E, F, G, H);
 
     sides[0] = Rectangle(A, E, H, D);
     sides[1] = Rectangle(B, F, E, A);

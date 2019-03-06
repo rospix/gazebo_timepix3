@@ -1,5 +1,4 @@
 #include <rviz_visualizer.h>
-#define RAY_VISUALIZER_RANGE 10  // [m]
 
 void RadiationVisualizer::visualizeSources(ros::Publisher pub, std::map<unsigned int, Source> sources) {
   visualization_msgs::Marker marker;
@@ -51,10 +50,10 @@ void RadiationVisualizer::visualizeRay(ros::Publisher pub, Ray ray) {
   p1.y = ray.origin[1];
   p1.z = ray.origin[2];
 
-  ray.direction.normalize();
-  p2.x = ray.origin[0] + RAY_VISUALIZER_RANGE * ray.direction[0];
-  p2.y = ray.origin[1] + RAY_VISUALIZER_RANGE * ray.direction[1];
-  p2.z = ray.origin[2] + RAY_VISUALIZER_RANGE * ray.direction[2];
+  /* ray.direction.normalize(); */
+  p2.x = ray.origin[0] + ray.direction[0];
+  p2.y = ray.origin[1] + ray.direction[1];
+  p2.z = ray.origin[2] + ray.direction[2];
 
   line_strip.points.push_back(p1);
   line_strip.points.push_back(p2);

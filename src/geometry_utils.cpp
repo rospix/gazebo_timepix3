@@ -61,7 +61,7 @@ Rectangle::Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Ei
   this->normal_vector = v1.cross(v2);
   this->normal_vector.normalize();
 
-  if (A == B or A == C or A == D or B == C or B == D or C == D) {
+  if (A == B || A == C || A == D || B == C || B == D || C == D) {
     return;
   }
 
@@ -70,7 +70,6 @@ Rectangle::Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Ei
   this->basis.col(0) << D - A;
   this->basis.col(1) << D - C;
   this->basis.col(2) << normal_vector;
-  /* this->basis.transposeInPlace(); */
 
   this->projector = basis * basis.transpose();
 }
