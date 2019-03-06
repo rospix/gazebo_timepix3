@@ -48,6 +48,7 @@ add_library(
   src/geometry_utils.cpp
   src/radiation_utils.cpp
   src/rviz_visualizer.cpp
+  src/materials.cpp
   )
 
 target_link_libraries(${PROJECT_NAME}

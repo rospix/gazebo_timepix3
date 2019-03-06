@@ -22,6 +22,7 @@
 #include <geometry_utils.h>
 #include <radiation_utils.h>
 #include <rviz_visualizer.h>
+#include <materials.h>
 
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
 #define STEP_DURATION 0.5                  // [s]
@@ -58,8 +59,10 @@ namespace gazebo
 
     std::map<unsigned int, Source> sources;
 
-    double                 sensor_size;
-    double                 sensor_thickness;
+    double   sensor_size;
+    double   sensor_thickness;
+    Material sensor_material;
+
     Rectangle              front, back;
     std::vector<Rectangle> sides;
 
@@ -81,7 +84,6 @@ namespace gazebo
     std::unique_ptr<ros::NodeHandle> rosNode;
     ros::CallbackQueue               rosQueue;
     std::thread                      rosQueueThread;
-    std::thread                      simulationThread;
     ros::Publisher                   test_pub;
 
     ros::Publisher sources_visualizer_pub, ray_visualizer_pub, point_visualizer_pub, sensor_front_visualizer_pub, sensor_back_visualizer_pub;
@@ -171,6 +173,7 @@ namespace gazebo
 
     this->sensor_size      = 0.01408;
     this->sensor_thickness = 300e-06;
+    this->sensor_material  = Si;
 
     this->rad_sub = node_handle_->Subscribe("~/radiation", &Timepix::radiationCallback, this, false);
 
@@ -255,6 +258,8 @@ namespace gazebo
           }
         }
         double track_length = (intersect1 - intersect2.get()).norm();
+        /* double capture_prob = //TODO pokracovat tady */
+
         /* ROS_INFO("Track length: %.9f", track_length); */
         /* RadiationVisualizer::visualizeRay(ray_visualizer_pub, r); */
         /* RadiationVisualizer::visualizeRect(sensor_front_visualizer_pub, front, 0.0, 0.8, 0.8); */
