@@ -55,6 +55,8 @@ public:
 
   Plane                        plane;
   std::vector<Eigen::Vector3d> points;
+  
+  boost::optional<Eigen::Vector3d> intersectionRay(Ray r, double epsilon = 1e-16);
 };
 
 double haversin(double angle);

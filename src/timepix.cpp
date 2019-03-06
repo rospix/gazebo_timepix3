@@ -24,7 +24,7 @@
 #include <rviz_visualizer.h>
 
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
-#define STEP_DURATION 0.01                 // [s]
+#define STEP_DURATION 0.5                  // [s]
 
 namespace gazebo
 {
@@ -36,18 +36,12 @@ namespace gazebo
     virtual ~Timepix();
 
     void QueueThread() {
-      static const double timeout = 0.01;
-      while (this->rosNode->ok()) {
-        this->rosQueue.callAvailable(ros::WallDuration(timeout));
-      }
-    }
+      static const double timeout = STEP_DURATION;
+      while (this->rosNode->ok() && ros::ok()) {
+        this->updatePosition(this->model_->WorldPose());
+        this->simulate();
 
-    void raytracerLoop() {
-      ros::Duration stepDuration(STEP_DURATION);
-      while (this->rosNode->ok()) {
-        updatePosition(this->model_->WorldPose());
-        simulate();
-        stepDuration.sleep();
+        this->rosQueue.callAvailable(ros::WallDuration(timeout));
       }
     }
 
@@ -110,13 +104,13 @@ namespace gazebo
     this->rosNode->shutdown();
     // wait for threads to finish
     this->rosQueueThread.join();
-    this->callback_queue_thread_.join();
-    this->simulationThread.detach();
+    this->callback_queue_thread_.interrupt();
     // destroy connection to gazebo
     updateConnection_->~Connection();
   }
 
   //}
+
 
   /* radiationCallback() //{ */
 
@@ -175,8 +169,7 @@ namespace gazebo
 
     this->modelName = model_->GetName();
 
-    this->sensor_size = 0.01408;
-    /* this->sensor_size      = 1.408; */
+    this->sensor_size      = 0.01408;
     this->sensor_thickness = 300e-06;
 
     this->rad_sub = node_handle_->Subscribe("~/radiation", &Timepix::radiationCallback, this, false);
@@ -202,9 +195,6 @@ namespace gazebo
       this->sides.push_back(Rectangle(A, B, C, D));
     }
 
-    this->simulationThread = std::thread(boost::bind(&Timepix::raytracerLoop, this));
-    /* updatePosition(model_->WorldPose()); */
-
     ROS_INFO("[Timepix]: initialized");
   }
 
@@ -224,30 +214,53 @@ namespace gazebo
       return;
     }
 
-    ros::Time curr_time = ros::Time::now();
+    double    samples_sum = 0.0;
+    ros::Time curr_time   = ros::Time::now();
     for (auto source = sources.begin(); source != sources.end();) {
       if (source->second.last_contact.toSec() + STEP_DURATION < curr_time.toSec()) {
-        ROS_INFO("[Timepix #%u]: No longer tracking source #%u", node_handle_->GetId(), source->first);
+        ROS_INFO("[Timepix #%u]: No longer tracking source #%u. Reason: Timeout", node_handle_->GetId(), source->first);
         source = sources.erase(source);
         continue;
       }
       source->second.apparent_activity = (source->second.activity / 4 * M_PI) * rectSolidAngle(this->front, source->second.position);
-      ROS_INFO("[Timepix #%u]: Source #%u requires %.0f samples", node_handle_->GetId(), source->first, source->second.apparent_activity * STEP_DURATION);
-      double iteration_start = ros::Time::now().toSec();
+      samples_sum += source->second.apparent_activity * STEP_DURATION;
+      /* ROS_INFO("[Timepix #%u]: Source #%u requires %.0f samples", node_handle_->GetId(), source->first, source->second.apparent_activity * STEP_DURATION); */
+      source++;
+    }
 
-      // Each source gets 1/n size of step duration
-      // TODO equalize the percent slow for all sources
+    for (auto source = sources.begin(); source != sources.end(); source++) {
+      double iteration_start              = ros::Time::now().toSec();
+      source->second.time_slot_percentage = (source->second.apparent_activity * STEP_DURATION) / samples_sum;
       for (int i = 0; i < source->second.apparent_activity * STEP_DURATION; i++) {
-        Eigen::Vector3d front_intersect = sampleRectangle(this->front);
+        Eigen::Vector3d intersect1 = sampleRectangle(this->front);
 
-        Ray r = Ray::twopointCast(source->second.position, front_intersect);
-        if (ros::Time::now().toSec() > iteration_start + (STEP_DURATION / sources.size())) {
-          ROS_WARN("[Timepix #%u]: Source #%u only recieved %d samples (%.3f%% of original)", node_handle_->GetId(), source->first, i,
-                   ((100.0 * i) / (source->second.apparent_activity * STEP_DURATION)));
+        Ray r = Ray::twopointCast(source->second.position, intersect1);
+        if (ros::Time::now().toSec() > iteration_start + source->second.time_slot_percentage * STEP_DURATION) {
+          ROS_WARN("[Timepix #%u]: Source #%u only recieved %d samples (%.3f%% of required samples, using %.3f%% of simulation step)", node_handle_->GetId(),
+                   source->first, i, ((100.0 * i) / (source->second.apparent_activity * STEP_DURATION)), (100.0 * source->second.time_slot_percentage));
           break;
         }
+        boost::optional<Eigen::Vector3d> intersect2 = this->back.intersectionRay(r);
+
+        // calculate second intersection with sensor
+        if (!intersect2) {
+          ROS_WARN("No intersection with sensor back");
+          for (size_t i = 0; i < this->sides.size(); i++) {
+            intersect2 = this->sides[i].intersectionRay(r);
+            if (intersect2) {
+              break;
+            }
+            ROS_FATAL("No intersect found");
+            return;
+          }
+        }
+        double track_length = (intersect1 - intersect2.get()).norm();
+        /* ROS_INFO("Track length: %.9f", track_length); */
+        /* RadiationVisualizer::visualizeRay(ray_visualizer_pub, r); */
+        /* RadiationVisualizer::visualizeRect(sensor_front_visualizer_pub, front, 0.0, 0.8, 0.8); */
+        /* RadiationVisualizer::visualizeRect(sensor_back_visualizer_pub, back); */
+        /* RadiationVisualizer::visualizePoint(point_visualizer_pub, intersect2.get()); */
       }
-      source++;
     }
     /* RadiationVisualizer::visualizeSources(sources_visualizer_pub, sources); */
 

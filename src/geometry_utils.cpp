@@ -74,6 +74,18 @@ Rectangle::Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Ei
   this->projector = basis * basis.transpose();
 }
 
+boost::optional<Eigen::Vector3d> Rectangle::intersectionRay(Ray r, double epsilon) {
+  boost::optional<Eigen::Vector3d> intersect = this->plane.intersectionRay(r, epsilon);
+  if (!intersect) {
+    return intersect;
+  }
+  Eigen::Vector3d projection = basis.inverse() * (points[3] - intersect.get());
+  if (projection[0] >= 0.0 && projection[0] <= 1.0 && projection[1] >= 0.0 && projection[1] <= 1.0) {
+    return intersect;
+  }
+  return boost::optional<Eigen::Vector3d>{};
+}
+
 double haversin(double angle) {
   return (1.0 - std::cos(angle)) / 2.0;
 }

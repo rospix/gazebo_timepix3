@@ -39,7 +39,7 @@ void RadiationVisualizer::visualizeRay(ros::Publisher pub, Ray ray) {
   line_strip.id                 = 1;
   line_strip.type               = visualization_msgs::Marker::LINE_STRIP;
 
-  line_strip.scale.x = 0.008;
+  line_strip.scale.x = 0.004;
 
   line_strip.color.r = 1.0;
   line_strip.color.a = 1.0;
@@ -59,7 +59,7 @@ void RadiationVisualizer::visualizeRay(ros::Publisher pub, Ray ray) {
   line_strip.points.push_back(p2);
   pub.publish(line_strip);
 }
-void RadiationVisualizer::visualizePoint(ros::Publisher pub, Eigen::Vector3d p) {
+void RadiationVisualizer::visualizePoint(ros::Publisher pub, Eigen::Vector3d p, double r, double g, double b) {
   visualization_msgs::Marker marker;
   marker.header.frame_id    = "/base_link";
   marker.header.stamp       = ros::Time::now();
@@ -72,7 +72,9 @@ void RadiationVisualizer::visualizePoint(ros::Publisher pub, Eigen::Vector3d p) 
   marker.scale.x = 0.007;
   marker.scale.y = 0.007;
 
-  marker.color.g = 1.0;
+  marker.color.r = r;
+  marker.color.g = g;
+  marker.color.b = b;
   marker.color.a = 1.0;
 
   geometry_msgs::Point gp;
@@ -94,7 +96,7 @@ void RadiationVisualizer::visualizeRect(ros::Publisher pub, Rectangle rect, doub
   line_strip.id                 = 1;
   line_strip.type               = visualization_msgs::Marker::LINE_STRIP;
 
-  line_strip.scale.x = 0.0007;
+  line_strip.scale.x = 0.002;
 
   line_strip.color.r = r;
   line_strip.color.g = g;

@@ -18,6 +18,7 @@ public:
   Eigen::Vector3d position;
   double          apparent_activity = 0.0;
   ros::Time       last_contact      = ros::TIME_MIN;
+  double          time_slot_percentage = 1.0;
 };
 
 #endif
