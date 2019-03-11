@@ -50,15 +50,15 @@ Rectangle::~Rectangle() {
 
 Rectangle::Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Eigen::Vector3d D) {
 
-  Eigen::Vector3d v1 = D - A;
-  Eigen::Vector3d v2 = C - A;
+  Eigen::Vector3d v1 = B - A;
+  Eigen::Vector3d v2 = D - A;
 
   this->points.push_back(A);
   this->points.push_back(B);
   this->points.push_back(C);
   this->points.push_back(D);
 
-  this->normal_vector = v2.cross(v1);
+  this->normal_vector = v1.cross(v2);
   this->normal_vector.normalize();
 
   if (A == B || A == C || A == D || B == C || B == D || C == D) {
