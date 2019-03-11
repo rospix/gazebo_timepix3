@@ -22,10 +22,10 @@
 #include <geometry_utils.h>
 #include <radiation_utils.h>
 #include <rviz_visualizer.h>
-#include <materials.h>
+/* #include <materials.h> */
 
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
-#define STEP_DURATION 0.5                  // [s]
+#define STEP_DURATION 0.01                 // [s]
 
 namespace gazebo
 {
@@ -38,7 +38,7 @@ namespace gazebo
 
     void QueueThread() {
       static const double timeout = STEP_DURATION;
-      while (this->rosNode->ok() && ros::ok()) {
+      while (this->rosNode->ok()) {
         this->updatePosition(this->model_->WorldPose());
         this->simulate();
 
@@ -59,9 +59,9 @@ namespace gazebo
 
     std::map<unsigned int, Source> sources;
 
-    double   sensor_size;
-    double   sensor_thickness;
-    Material sensor_material;
+    double sensor_size;
+    double sensor_thickness;
+    /* Material sensor_material; */
 
     Rectangle              front, back;
     std::vector<Rectangle> sides;
@@ -95,6 +95,7 @@ namespace gazebo
 
     std::string modelName;
     void        simulate();
+    /* double      photoelectricCrossSection(Material material, double energy); */
   };
 
   GZ_REGISTER_MODEL_PLUGIN(Timepix)
@@ -112,7 +113,6 @@ namespace gazebo
   }
 
   //}
-
 
   /* radiationCallback() //{ */
 
@@ -133,13 +133,12 @@ namespace gazebo
   }
 
   Eigen::Vector3d Timepix::sampleRectangle(Rectangle r) {
-    Eigen::Vector3d ab = r.points[1] - r.points[0];
-    Eigen::Vector3d ad = r.points[3] - r.points[0];
 
     double k1 = rand_dbl(rand_gen);
     double k2 = rand_dbl(rand_gen);
 
-    return r.points[0] + k1 * ab + k2 * ad;
+    Eigen::Vector3d sampled_point = r.points[0] + k1 * r.basis.col(0) + k2 * r.basis.col(1);
+    return sampled_point;
   }
 
   //}
@@ -171,9 +170,11 @@ namespace gazebo
 
     this->modelName = model_->GetName();
 
-    this->sensor_size      = 0.01408;
-    this->sensor_thickness = 300e-06;
-    this->sensor_material  = Si;
+    /* this->sensor_size      = 0.01408; */
+    this->sensor_size = 0.4;
+    /* this->sensor_thickness = 300e-06; */
+    this->sensor_thickness = 0.1;
+    /* this->sensor_material  = Si; */
 
     this->rad_sub = node_handle_->Subscribe("~/radiation", &Timepix::radiationCallback, this, false);
 
@@ -234,8 +235,9 @@ namespace gazebo
     for (auto source = sources.begin(); source != sources.end(); source++) {
       double iteration_start              = ros::Time::now().toSec();
       source->second.time_slot_percentage = (source->second.apparent_activity * STEP_DURATION) / samples_sum;
+      bool front_exposed                  = this->front.normal_vector.dot(source->second.position - this->front.points[0]) < 0;
       for (int i = 0; i < source->second.apparent_activity * STEP_DURATION; i++) {
-        Eigen::Vector3d intersect1 = sampleRectangle(this->front);
+        Eigen::Vector3d intersect1 = sampleRectangle(front_exposed ? front : back);
 
         Ray r = Ray::twopointCast(source->second.position, intersect1);
         if (ros::Time::now().toSec() > iteration_start + source->second.time_slot_percentage * STEP_DURATION) {
@@ -243,7 +245,7 @@ namespace gazebo
                    source->first, i, ((100.0 * i) / (source->second.apparent_activity * STEP_DURATION)), (100.0 * source->second.time_slot_percentage));
           break;
         }
-        boost::optional<Eigen::Vector3d> intersect2 = this->back.intersectionRay(r);
+        boost::optional<Eigen::Vector3d> intersect2 = (front_exposed ? back : front).intersectionRay(r);
 
         // calculate second intersection with sensor
         if (!intersect2) {
@@ -258,67 +260,28 @@ namespace gazebo
           }
         }
         double track_length = (intersect1 - intersect2.get()).norm();
-        /* double capture_prob = //TODO pokracovat tady */
+
+        /* double cross_section = this->photoelectricCrossSection(this->sensor_material, 0.662); */
+        /* double cross_section = this->photoelectricCrossSection(this->sensor_material, r.energy); */
+        /* double capture_prob = std::exp(-sensor_material.element_quantities[0] * sensor_material.molecular_density * cross_section * track_length); */
+        /* ROS_INFO("Capture probability: %.4f", (1-capture_prob)); */
 
         /* ROS_INFO("Track length: %.9f", track_length); */
-        /* RadiationVisualizer::visualizeRay(ray_visualizer_pub, r); */
-        /* RadiationVisualizer::visualizeRect(sensor_front_visualizer_pub, front, 0.0, 0.8, 0.8); */
-        /* RadiationVisualizer::visualizeRect(sensor_back_visualizer_pub, back); */
-        /* RadiationVisualizer::visualizePoint(point_visualizer_pub, intersect2.get()); */
+        RadiationVisualizer::visualizeRay(ray_visualizer_pub, r);
+        RadiationVisualizer::visualizeRect(sensor_front_visualizer_pub, front, 0.0, 0.8, 0.8);
+        RadiationVisualizer::visualizeRect(sensor_back_visualizer_pub, back);
+        RadiationVisualizer::visualizePoint(point_visualizer_pub, intersect2.get());
       }
     }
-    /* RadiationVisualizer::visualizeSources(sources_visualizer_pub, sources); */
-
-    /*     for (std::map<unsigned int, Source>::iterator it = sources.begin(); it != sources.end(); it++) { */
-
-    /*       it->second.apparent_activity = (it->second.activity / 4 * M_PI) * rectSolidAngle(this->front, it->second.position); */
-
-    /*       if (it->second.last_ray_time.Double() + (1.0 / it->second.apparent_activity) < current_time.Double()) { */
-    /*         // cast ray from source to the front rectangle */
-    /*         Eigen::Vector3d front_intersect = sampleRectangle(this->front); */
-    /*         RadiationVisualizer::visualizePoint(point_visualizer_pub, front_intersect); */
-    /*         Ray r = Ray::twopointCast(it->second.position, front_intersect); */
-    /*         RadiationVisualizer::visualizeRay(ray_visualizer_pub, r); */
-    /*         it->second.last_ray_time = current_time; */
-
-    /*         // check intersection with back side */
-    /*         boost::optional<Eigen::Vector3d> back_intersect = this->back.plane.intersectionRay(r); */
-    /*         if (!back_intersect) { */
-    /*           ROS_WARN("No intersection with sensor back"); */
-    /*           // check intersection with sides */
-    /*           for (size_t i = 0; i < this->sides.size(); i++) { */
-    /*             boost::optional<Eigen::Vector3d> side_intersect = this->sides[i].plane.intersectionRay(r); */
-    /*             if (side_intersect) { */
-    /*               double intersection_length = (front_intersect - side_intersect.get()).norm(); */
-    /*               ROS_INFO("Intersection length: %.7f", intersection_length); */
-    /*               break; */
-    /*             } */
-    /*           } */
-
-    /*         } else { */
-    /*           Eigen::Vector3d projection = back.basis.inverse() * (back.points[3] - (*back_intersect)); */
-    /*           /1* ROS_INFO("Intersect in basis: %.6f, %.6f, %.6f", projection[0], projection[1], projection[2]); *1/ */
-    /*           if (0 <= projection[0] <= 1.0 and 0 <= projection[1] <= 1.0) { */
-    /*             double intersection_length = (*back_intersect - front_intersect).norm(); */
-    /*             ROS_INFO("Intersection length: %.7f", intersection_length); */
-    /*           } */
-    /*         } */
-    /*       } */
-    /*     } */
-    /*     if (current_time.Double() > last_time_.Double() + 0.01) { */
-    /*       RadiationVisualizer::visualizeRect(sensor_front_visualizer_pub, this->front, 0.0, 0.2, 1.0); */
-    /*       RadiationVisualizer::visualizeRect(sensor_back_visualizer_pub, this->back, 0.0, 0.6, 1.0); */
-    /*     } */
-    /*     //} */
-  }  // namespace gazebo
+  }
   //}
 
   /* updatePosition() */  //{
   void Timepix::updatePosition(ignition::math::Pose3d world_pose) {
-    Eigen::Vector3d A(sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
-    Eigen::Vector3d B(sensor_thickness / 2.0, sensor_size / 2.0, sensor_size / 2.0);
-    Eigen::Vector3d C(sensor_thickness / 2.0, sensor_size / 2.0, -sensor_size / 2.0);
-    Eigen::Vector3d D(sensor_thickness / 2.0, -sensor_size / 2.0, -sensor_size / 2.0);
+    Eigen::Vector3d A(sensor_thickness / 2.0, sensor_size / 2.0, -sensor_size / 2.0);
+    Eigen::Vector3d B(sensor_thickness / 2.0, -sensor_size / 2.0, -sensor_size / 2.0);
+    Eigen::Vector3d C(sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
+    Eigen::Vector3d D(sensor_thickness / 2.0, sensor_size / 2.0, sensor_size / 2.0);
 
     Eigen::Vector3d pos = pos3toVector3d(world_pose);
     Eigen::Affine3d T;
@@ -332,10 +295,10 @@ namespace gazebo
     C = T * Q * C;
     D = T * Q * D;
 
-    Eigen::Vector3d E(-sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
-    Eigen::Vector3d F(-sensor_thickness / 2.0, sensor_size / 2.0, sensor_size / 2.0);
-    Eigen::Vector3d G(-sensor_thickness / 2.0, sensor_size / 2.0, -sensor_size / 2.0);
-    Eigen::Vector3d H(-sensor_thickness / 2.0, -sensor_size / 2.0, -sensor_size / 2.0);
+    Eigen::Vector3d E(-sensor_thickness / 2.0, sensor_size / 2.0, -sensor_size / 2.0);
+    Eigen::Vector3d F(-sensor_thickness / 2.0, -sensor_size / 2.0, -sensor_size / 2.0);
+    Eigen::Vector3d G(-sensor_thickness / 2.0, -sensor_size / 2.0, sensor_size / 2.0);
+    Eigen::Vector3d H(-sensor_thickness / 2.0, sensor_size / 2.0, sensor_size / 2.0);
 
     E = T * Q * E;
     F = T * Q * F;
@@ -352,5 +315,12 @@ namespace gazebo
   }
   //}
 
+  /* /1* photoelectricCrossSection *1/  //{ */
+  /* double Timepix::photoelectricCrossSection(Material material, double energy) { */
+  /*   double e_rest_mass_energy = 511000.0; */
+  /*   double k                  = energy / e_rest_mass_energy; */
+  /*   return (16.0 / 3.0) * std::sqrt(2.0) * M_PI * std::pow(Constants::r_e, 2) * std::pow(Constants::alpha, 4) * */
+  /*          (std::pow(material.elements[0].atomic_number, 5) / std::pow(k, 3.5)); */
+  /* } */
+  /* //} */
 }  // namespace gazebo
-
