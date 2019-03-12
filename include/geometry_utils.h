@@ -55,7 +55,10 @@ public:
 
   Plane                        plane;
   std::vector<Eigen::Vector3d> points;
-  
+  Eigen::Vector3d              center;
+
+  double samples            = 0;
+
   boost::optional<Eigen::Vector3d> intersectionRay(Ray r, double epsilon = 1e-16);
 };
 

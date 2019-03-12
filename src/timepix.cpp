@@ -27,6 +27,13 @@
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
 #define STEP_DURATION 0.01                 // [s]
 
+#define FRONT 0
+#define BACK 1
+#define LEFT 2
+#define RIGHT 3
+#define BOTTOM 4
+#define TOP 5
+
 namespace gazebo
 {
   /* class Timepix //{ */
@@ -62,9 +69,9 @@ namespace gazebo
     double sensor_size;
     double sensor_thickness;
     /* Material sensor_material; */
+    double photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density);
 
-    Rectangle              front, back;
-    std::vector<Rectangle> sides;
+    Rectangle sides[6];
 
     void            updatePosition(ignition::math::Pose3d world_pose);
     Eigen::Vector3d sampleRectangle(Rectangle rect);
@@ -86,7 +93,8 @@ namespace gazebo
     std::thread                      rosQueueThread;
     ros::Publisher                   test_pub;
 
-    ros::Publisher sources_visualizer_pub, ray_visualizer_pub, point_visualizer_pub, rect1_visualizer_pub, rect2_visualizer_pub, rect3_visualizer_pub;
+    ros::Publisher sources_visualizer_pub, ray_visualizer_pub, track_visualizer_pub, point_visualizer_pub, point1_visualizer_pub, rect1_visualizer_pub,
+        rect2_visualizer_pub, rect3_visualizer_pub;
 
     gazebo_rad_msgs::msgs::RadiationSource radiation_msg;
 
@@ -108,7 +116,7 @@ namespace gazebo
     this->rosNode->shutdown();
     // wait for threads to finish
     this->rosQueueThread.join();
-    this->callback_queue_thread_.interrupt();
+    this->callback_queue_thread_.join();
     // destroy connection to gazebo
     updateConnection_->~Connection();
   }
@@ -171,10 +179,10 @@ namespace gazebo
 
     this->modelName = model_->GetName();
 
-    /* this->sensor_size      = 0.01408; */
-    this->sensor_size = 0.4;
-    /* this->sensor_thickness = 300e-06; */
-    this->sensor_thickness = 0.1;
+    this->sensor_size = 0.01408;
+    /* this->sensor_size = 0.4; */
+    this->sensor_thickness = 300e-06;
+    /* this->sensor_thickness = 0.1; */
     /* this->sensor_material  = Si; */
 
     this->rad_sub = node_handle_->Subscribe("~/radiation", &Timepix::radiationCallback, this, false);
@@ -182,7 +190,9 @@ namespace gazebo
     this->test_pub               = this->rosNode->advertise<std_msgs::Float64>("/radiation/test", 100);
     this->sources_visualizer_pub = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/sources", 100);
     this->ray_visualizer_pub     = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/ray", 100);
+    this->track_visualizer_pub   = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/track", 100);
     this->point_visualizer_pub   = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/point", 100);
+    this->point1_visualizer_pub  = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/point1", 100);
     this->rect1_visualizer_pub   = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/rect1", 100);
     this->rect2_visualizer_pub   = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/rect2", 100);
     this->rect3_visualizer_pub   = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/rect3", 100);
@@ -194,13 +204,9 @@ namespace gazebo
     Eigen::Vector3d C = pos3toVector3d(model_->WorldPose());
     Eigen::Vector3d D = pos3toVector3d(model_->WorldPose());
 
-    this->front = Rectangle(A, B, C, D);
-    this->back  = Rectangle(A, B, C, D);
-
-    for (int i = 0; i < 4; i++) {
-      this->sides.push_back(Rectangle(A, B, C, D));
+    for (int i = 0; i < 6; i++) {
+      sides[i] = Rectangle(A, B, C, D);
     }
-
     ROS_INFO("[Timepix]: initialized");
   }
 
@@ -215,64 +221,52 @@ namespace gazebo
   }
   //}
 
+  /* simulate() */  //{
   void Timepix::simulate() {
     if (this->sources.empty()) {
       return;
     }
 
     std::map<unsigned int, std::vector<Rectangle>> exposed_faces = preprocessSources();
-    // TODO iterate over the map -> first:=source index, second:=faces to be sampled
 
+    double begin_time  = ros::Time::now().toSec();
+    int    samples_sum = 0;
+    for (auto it = exposed_faces.begin(); it != exposed_faces.end(); it++) {
+      std::vector<Rectangle> faces = it->second;
+
+      for (auto rect = faces.begin(); rect != faces.end(); rect++) {
+        for (int i = 0; i < rect->samples; i++) {
+
+          Eigen::Vector3d intersect1 = sampleRectangle(*rect);
+
+          Ray r = Ray::twopointCast(sources.find(it->first)->second.position, intersect1);
+          if (ros::Time::now().toSec() > begin_time + STEP_DURATION) {
+            ROS_WARN("Sampling interrupted. Samples generated: %d", samples_sum);
+            return;
+          }
+          boost::optional<Eigen::Vector3d> intersect2;
+          for (int j = 0; j < 6; j++) {
+            if (rect->basis == sides[j].basis) {
+              continue;
+            }
+            intersect2 = sides[j].intersectionRay(r);
+            if (intersect2) {
+              /* RadiationVisualizer::visualizeRay(track_visualizer_pub, Ray::twopointCast(intersect1, *intersect2)); */
+              /* RadiationVisualizer::visualizePoint(point1_visualizer_pub, intersect1); */
+              /* RadiationVisualizer::visualizePoint(point_visualizer_pub, *intersect2); */
+              double track_length = (intersect1 - intersect2.get()).norm();
+              double pe_prob      = 1.0 - photoabsorptionProbability(track_length, 2.0016E+02, 2.230E+00);
+              ROS_INFO("Track length: %.4f, Probability: %.4f", track_length, (100 * pe_prob));
+              break;
+            }
+          }
+          samples_sum++;
+        }
+      }
+    }
+    ROS_INFO("Realtime simulation. Samples generated: %d", samples_sum);
     return;
   }
-  /*       samples_sum += source->second.apparent_activity * STEP_DURATION; */
-  /*       /1* ROS_INFO("[Timepix #%u]: Source #%u requires %.0f samples", node_handle_->GetId(), source->first, source->second.apparent_activity *
-   * STEP_DURATION); *1/ */
-  /*       source++; */
-  /*     } */
-
-  /*     for (auto source = sources.begin(); source != sources.end(); source++) { */
-  /*       double iteration_start              = ros::Time::now().toSec(); */
-  /*       source->second.time_slot_percentage = (source->second.apparent_activity * STEP_DURATION) / samples_sum; */
-  /*       bool front_exposed                  = this->front.normal_vector.dot(source->second.position - this->front.points[0]) < 0; */
-  /*       for (int i = 0; i < source->second.apparent_activity * STEP_DURATION; i++) { */
-  /*         Eigen::Vector3d intersect1 = sampleRectangle(front_exposed ? front : back); */
-
-  /*         Ray r = Ray::twopointCast(source->second.position, intersect1); */
-  /*         if (ros::Time::now().toSec() > iteration_start + source->second.time_slot_percentage * STEP_DURATION) { */
-  /*           ROS_WARN("[Timepix #%u]: Source #%u only recieved %d samples (%.3f%% of required samples, using %.3f%% of simulation step)",
-   * node_handle_->GetId(), */
-  /*                    source->first, i, ((100.0 * i) / (source->second.apparent_activity * STEP_DURATION)), (100.0 * source->second.time_slot_percentage)); */
-  /*           break; */
-  /*         } */
-  /*         boost::optional<Eigen::Vector3d> intersect2 = (front_exposed ? back : front).intersectionRay(r); */
-
-  /*         // calculate second intersection with sensor */
-  /*         if (!intersect2) { */
-  /*           ROS_WARN("No intersection with sensor back"); */
-  /*           for (size_t i = 0; i < this->sides.size(); i++) { */
-  /*             intersect2 = this->sides[i].intersectionRay(r); */
-  /*             if (intersect2) { */
-  /*               break; */
-  /*             } */
-  /*             ROS_FATAL("No intersect found"); */
-  /*             return; */
-  /*           } */
-  /*         } */
-  /*         double track_length = (intersect1 - intersect2.get()).norm(); */
-
-  /*         /1* double cross_section = this->photoelectricCrossSection(this->sensor_material, 0.662); *1/ */
-  /*         /1* double cross_section = this->photoelectricCrossSection(this->sensor_material, r.energy); *1/ */
-  /*         /1* double capture_prob = std::exp(-sensor_material.element_quantities[0] * sensor_material.molecular_density * cross_section * track_length); *1/
-   */
-  /*         /1* ROS_INFO("Capture probability: %.4f", (1-capture_prob)); *1/ */
-
-  /*         /1* ROS_INFO("Track length: %.9f", track_length); *1/ */
-  /*         RadiationVisualizer::visualizeRay(ray_visualizer_pub, r); */
-  /*         RadiationVisualizer::visualizePoint(point_visualizer_pub, intersect2.get()); */
-  /*       } */
-  /*     } */
-  /*   } */
   //}
 
   /* updatePosition() */  //{
@@ -304,13 +298,12 @@ namespace gazebo
     G = T * Q * G;
     H = T * Q * H;
 
-    this->front = Rectangle(A, B, C, D);
-    this->back  = Rectangle(E, F, G, H);
-
-    sides[0] = Rectangle(B, E, H, C);
-    sides[1] = Rectangle(F, A, D, G);
-    sides[2] = Rectangle(F, E, B, A);
-    sides[3] = Rectangle(D, C, H, G);
+    sides[FRONT]  = Rectangle(A, B, C, D);
+    sides[BACK]   = Rectangle(E, F, G, H);
+    sides[LEFT]   = Rectangle(B, E, H, C);
+    sides[RIGHT]  = Rectangle(F, A, D, G);
+    sides[BOTTOM] = Rectangle(F, E, B, A);
+    sides[TOP]    = Rectangle(D, C, H, G);
   }
   //}
 
@@ -322,7 +315,7 @@ namespace gazebo
     ros::Time curr_time = ros::Time::now();
     for (auto source = sources.begin(); source != sources.end();) {
       std::vector<Rectangle> exposed_faces;
-      double                 samples_sum = 0;
+      /* double                 samples_sum = 0; */
       // clear inactive sources
       if (source->second.last_contact.toSec() + STEP_DURATION < curr_time.toSec()) {
         ROS_INFO("[Timepix #%u]: No longer tracking source #%u. Reason: Timeout", node_handle_->GetId(), source->first);
@@ -330,33 +323,37 @@ namespace gazebo
         continue;
       }
 
-      // Front/Back face exposure check
-      bool front_exposed = front.normal_vector.dot(source->second.position - front.points[0]) > 0;
-      exposed_faces.push_back(front_exposed ? front : back);
-      source->second.apparent_activity = (source->second.activity / 4 * M_PI) * rectSolidAngle(exposed_faces[0], source->second.position);
-
-      // Side face exposure check
-      for (size_t i = 0; i < sides.size(); i++) {
-        if (exposed_faces.size() <= 3 && sides[i].normal_vector.dot(source->second.position - sides[i].points[0]) > 0) {
-          source->second.apparent_activity += (source->second.activity / 4 * M_PI) * rectSolidAngle(sides[i], source->second.position);
+      // Exposure check
+      for (int i = 0; i < 6; i++) {
+        if (sides[i].normal_vector.dot(source->second.position - sides[i].center) > 0) {
+          double apparent_activity = (source->second.activity / 4 * M_PI) * rectSolidAngle(sides[i], source->second.position);
+          source->second.apparent_activity += apparent_activity;
+          sides[i].samples = apparent_activity * STEP_DURATION;
           exposed_faces.push_back(sides[i]);
+          if (exposed_faces.size() > 2) {
+            break;
+          }
         }
       }
 
-      if (exposed_faces.size() > 2) {
-        RadiationVisualizer::visualizeRect(rect1_visualizer_pub, exposed_faces[0], 0.0, 0.8, 0.8);
-        RadiationVisualizer::visualizeRect(rect2_visualizer_pub, exposed_faces[1], 0.8, 0.2, 0.3);
-        RadiationVisualizer::visualizeRect(rect3_visualizer_pub, exposed_faces[2]);
-      }
+      /* if (exposed_faces.size() > 2) { */
+      /*   RadiationVisualizer::visualizeRect(rect1_visualizer_pub, exposed_faces[0], 0.0, 0.8, 0.8); */
+      /*   RadiationVisualizer::visualizeRect(rect2_visualizer_pub, exposed_faces[1], 0.8, 0.2, 0.3); */
+      /*   RadiationVisualizer::visualizeRect(rect3_visualizer_pub, exposed_faces[2]); */
+      /* } */
 
-      ROS_INFO("Apparent activity of Source #%u: %.3f", source->first, source->second.apparent_activity);
-      samples_sum += source->second.apparent_activity * STEP_DURATION;
-      ROS_INFO("[Timepix #%u]: Source #%u requires %.0f samples", node_handle_->GetId(), source->first, source->second.apparent_activity * STEP_DURATION);
+      /* ROS_INFO("Apparent activity of Source #%u: %.3f", source->first, source->second.apparent_activity); */
+      /* samples_sum += source->second.apparent_activity * STEP_DURATION; */
+      /* ROS_INFO("[Timepix #%u]: Source #%u requires %.0f samples", node_handle_->GetId(), source->first, source->second.apparent_activity * STEP_DURATION); */
       ret.insert(std::pair<unsigned int, std::vector<Rectangle>>(source->first, exposed_faces));
       source++;
     }
     return ret;
   }
   //}
+
+  double Timepix::photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density) {
+    return std::exp(-mass_att_coeff * material_thickness * material_density);
+  }
 
 }  // namespace gazebo

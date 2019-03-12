@@ -64,6 +64,7 @@ Rectangle::Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Ei
   if (A == B || A == C || A == D || B == C || B == D || C == D) {
     return;
   }
+  this->center = (A + B + C + D) / 4;
 
   this->plane = Plane(A, normal_vector);
 
@@ -80,7 +81,6 @@ boost::optional<Eigen::Vector3d> Rectangle::intersectionRay(Ray r, double epsilo
     return intersect;
   }
   Eigen::Vector3d projection = basis.inverse() * (intersect.get() - points[0]);
-  ROS_INFO_STREAM("projection: " << projection);
   if (projection[0] >= 0.0 && projection[0] <= 1.0 && projection[1] >= 0.0 && projection[1] <= 1.0) {
     return intersect;
   }
