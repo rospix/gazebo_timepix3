@@ -12,20 +12,19 @@ class Ray {
 public:
   Ray();
   ~Ray();
-  Ray(Eigen::Vector3d origin, Eigen::Vector3d direction, double energy = 0.0);
+  Ray(Eigen::Vector3d p1, Eigen::Vector3d p2, double diagonal_absorption_probability = 0.0);
 
-  double          energy;
-  Eigen::Vector3d origin;
-  Eigen::Vector3d direction;
+  double diagonal_absorption_probability;
+
+  Eigen::Vector3d p1;
+  Eigen::Vector3d p2;
 
   static Ray twopointCast(Eigen::Vector3d pointFrom, Eigen::Vector3d pointTo) {
-    Eigen::Vector3d origin    = pointFrom;
-    Eigen::Vector3d direction = (pointTo - pointFrom);
-    /* direction.normalize(); */
-    return Ray(origin, direction);
+    return Ray(pointFrom, pointTo);
   }
   static Ray directionCast(Eigen::Vector3d origin, Eigen::Vector3d direction) {
-    return Ray(origin, direction);
+    Eigen::Vector3d p2 = origin + direction;
+    return Ray(origin, p2);
   }
 };
 
@@ -37,6 +36,7 @@ public:
 
   Eigen::Vector3d point;
   Eigen::Vector3d normal;
+  double d = 0;
 
   boost::optional<Eigen::Vector3d> intersectionRay(Ray r, double epsilon = 1e-16);
 };
@@ -57,7 +57,7 @@ public:
   std::vector<Eigen::Vector3d> points;
   Eigen::Vector3d              center;
 
-  double samples            = 0;
+  double samples = 0;
 
   boost::optional<Eigen::Vector3d> intersectionRay(Ray r, double epsilon = 1e-16);
 };

@@ -46,14 +46,13 @@ void RadiationVisualizer::visualizeRay(ros::Publisher pub, Ray ray) {
 
   geometry_msgs::Point p1, p2;
 
-  p1.x = ray.origin[0];
-  p1.y = ray.origin[1];
-  p1.z = ray.origin[2];
+  p1.x = ray.p1[0];
+  p1.y = ray.p1[1];
+  p1.z = ray.p1[2];
 
-  /* ray.direction.normalize(); */
-  p2.x = ray.origin[0] + ray.direction[0];
-  p2.y = ray.origin[1] + ray.direction[1];
-  p2.z = ray.origin[2] + ray.direction[2];
+  p2.x = ray.p2[0];
+  p2.y = ray.p2[1];
+  p2.z = ray.p2[2];
 
   line_strip.points.push_back(p1);
   line_strip.points.push_back(p2);

@@ -3,18 +3,20 @@
 #include <ros/ros.h>
 
 Ray::Ray() {
-  this->origin    = Eigen::Vector3d(0.0, 0.0, 0.0);
-  this->direction = Eigen::Vector3d(0.0, 0.0, 0.0);
-  this->energy    = 0.0;
+  this->p1 = Eigen::Vector3d(0.0, 0.0, 0.0);
+  this->p2 = Eigen::Vector3d(0.0, 0.0, 0.0);
+
+  this->diagonal_absorption_probability = 0.0;
 }
 
 Ray::~Ray() {
 }
 
-Ray::Ray(Eigen::Vector3d origin, Eigen::Vector3d direction, double energy) {
-  this->origin    = origin;
-  this->direction = direction;
-  this->energy    = energy;
+Ray::Ray(Eigen::Vector3d p1, Eigen::Vector3d p2, double diagonal_absorption_probability) {
+  this->p1 = p1;
+  this->p2 = p2;
+
+  this->diagonal_absorption_probability = diagonal_absorption_probability;
 }
 
 Plane::Plane() {
@@ -23,20 +25,21 @@ Plane::Plane() {
 Plane::Plane(Eigen::Vector3d point, Eigen::Vector3d normal) {
   this->point  = point;
   this->normal = normal;
+  this->d      = -(normal.dot(point));
 }
 
 Plane::~Plane() {
 }
 
 boost::optional<Eigen::Vector3d> Plane::intersectionRay(Ray r, double epsilon) {
-  double denom = this->normal.dot(r.direction);
+  double denom = this->normal.dot(r.p2 - r.p1);
   if (abs(denom) < epsilon) {
     return boost::optional<Eigen::Vector3d>{};
   }
-  Eigen::Vector3d p0l0 = this->point - r.origin;
+  Eigen::Vector3d p0l0 = this->point - r.p1;
   double          t    = this->normal.dot(p0l0) / denom;
   if (t >= 0) {
-    return Eigen::Vector3d(t * r.direction + r.origin);
+    return Eigen::Vector3d(t * r.p2);
   } else {
     return boost::optional<Eigen::Vector3d>{};
   }

@@ -24,8 +24,12 @@
 #include <rviz_visualizer.h>
 #include <materials.h>
 
+#include <chrono>
+
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
-#define STEP_DURATION 0.05                 // [s]
+
+#define TIMEOUT 0.1           // [s]
+#define SIMULATION_STEP 0.05  // [s]
 
 #define FRONT 0
 #define BACK 1
@@ -44,16 +48,29 @@ namespace gazebo
     virtual ~Timepix();
 
     void QueueThread() {
-      static const double timeout            = STEP_DURATION;
-      int                 photons_per_second = 0;
-      int                 counter            = 0;
       while (this->rosNode->ok()) {
-        this->updatePosition(this->model_->WorldPose());
-        photons_per_second += this->simulate();
-        this->rosQueue.callAvailable(ros::WallDuration(timeout));
-        counter++;
+        this->rosQueue.callAvailable(ros::WallDuration(TIMEOUT));
+      }
+    }
 
-        if (counter >= (1 / STEP_DURATION)) {
+    void SimulationThread() {
+      int photons_per_second = 0;
+      int counter            = 0;
+      while (rosNode->ok()) {
+
+        // TODO add high resolution clock here
+        double time_start = ros::Time::now().toSec();
+        updatePosition(model_->WorldPose());  // <- TODO check performance of this
+        photons_per_second += simulate();
+        counter++;
+        double time_end = ros::Time::now().toSec();
+        if (time_end - time_start > SIMULATION_STEP) {
+          ROS_WARN("SO SLOW :( %.3f", time_end - time_start);
+        } else {
+          ros::Duration(SIMULATION_STEP - (time_end - time_start)).sleep();
+        }
+
+        if (counter >= (1 / SIMULATION_STEP)) {
           ROS_INFO("[Timepix #%u]: Intensity %d Bq", this->node_handle_->GetId(), photons_per_second);
           photons_per_second = 0;
           counter            = 0;
@@ -104,6 +121,7 @@ namespace gazebo
     std::unique_ptr<ros::NodeHandle> rosNode;
     ros::CallbackQueue               rosQueue;
     std::thread                      rosQueueThread;
+    std::thread                      simThread;
     ros::Publisher                   test_pub;
 
     ros::Publisher sources_visualizer_pub, ray_visualizer_pub, track_visualizer_pub, point_visualizer_pub, point1_visualizer_pub, rect1_visualizer_pub,
@@ -118,7 +136,7 @@ namespace gazebo
 
     int simulate();  // runs one simulation step for this detector. Return number of captured photons
 
-    std::map<unsigned int, std::vector<Rectangle>> preprocessSources();  // remove inactive sources, map source IDs to rectangles which will be sampled
+    std::vector<Ray> preprocessSources();  // remove inactive sources, return all rays to be processed
   };
 
   GZ_REGISTER_MODEL_PLUGIN(Timepix)
@@ -129,6 +147,7 @@ namespace gazebo
     // end all ROS related stuff
     this->rosNode->shutdown();
     // wait for threads to finish
+    this->simThread.join();
     this->rosQueueThread.join();
     this->callback_queue_thread_.join();
     // destroy connection to gazebo
@@ -218,6 +237,7 @@ namespace gazebo
     this->rect3_visualizer_pub   = this->rosNode->advertise<visualization_msgs::Marker>("/radiation/visualizer/rect3", 100);
 
     this->rosQueueThread = std::thread(std::bind(&Timepix::QueueThread, this));
+    this->simThread      = std::thread(std::bind(&Timepix::SimulationThread, this));
 
     Eigen::Vector3d A = pos3toVector3d(model_->WorldPose());
     Eigen::Vector3d B = pos3toVector3d(model_->WorldPose());
@@ -247,58 +267,46 @@ namespace gazebo
     if (this->sources.empty()) {
       return 0;
     }
+    auto time0 = std::chrono::high_resolution_clock::now();
 
-    std::map<unsigned int, std::vector<Rectangle>> exposed_faces = preprocessSources();
+    std::vector<Ray> ray_array = preprocessSources();
 
-    double begin_time   = ros::Time::now().toSec();
-    int    samples_sum  = 0;
-    int    captured_sum = 0;
-    for (auto it = exposed_faces.begin(); it != exposed_faces.end(); it++) {
-      std::vector<Rectangle> faces = it->second;
+    auto time1 = std::chrono::high_resolution_clock::now();
+    std::cout << "Preprocessing time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(time1 - time0).count() << "\n";
+    std::cout << "Pre-time per ray: " << std::chrono::duration_cast<std::chrono::nanoseconds>(time1 - time0).count() / ray_array.size() << "\n";
+    int captured_sum = 0;
+    for (auto ray = ray_array.begin(); ray != ray_array.end(); ray++) {
 
-      for (auto rect = faces.begin(); rect != faces.end(); rect++) {
-        for (int i = 0; i < rect->samples; i++) {
-
-          Eigen::Vector3d intersect1 = sampleRectangle(*rect);
-
-          Ray r = Ray::twopointCast(sources.find(it->first)->second.position, intersect1);
-          if (ros::Time::now().toSec() > begin_time + STEP_DURATION) {
-            /* ROS_WARN("Sampling interrupted. Samples generated: %d", samples_sum); */
-            return captured_sum;
+      boost::optional<Eigen::Vector3d> intersect2;
+      for (int j = 0; j < 6; j++) {
+        if (sides[j].normal_vector.dot(ray->p2) + sides[j].plane.d == 0) {
+          continue;
+        }
+        intersect2 = sides[j].intersectionRay(*ray);
+        if (intersect2) {
+          /* auto visual_time1 = std::chrono::high_resolution_clock::now(); */
+          /* RadiationVisualizer::visualizeRay(track_visualizer_pub, Ray::twopointCast(ray->p2, *intersect2)); */
+          /* RadiationVisualizer::visualizePoint(point1_visualizer_pub, ray->p2); */
+          /* RadiationVisualizer::visualizePoint(point_visualizer_pub, *intersect2); */
+          /* auto visual_time2 = std::chrono::high_resolution_clock::now(); */
+          /* std::cout << "Visualization time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(visual_time2 - visual_time1).count() << "\n"; */
+          double track_length = (ray->p2 - intersect2.get()).norm();
+          double pe_prob = photoabsorptionProbability(track_length, sensor_material.pmac_Am241, sensor_material.density) / ray->diagonal_absorption_probability;
+          /* ROS_INFO("Track length: %.4f, Probability: %.4f", track_length, pe_prob); */
+          double coin_flip = rand_dbl(rand_gen);
+          if (coin_flip < pe_prob) {
+            captured_sum++;
           }
-          boost::optional<Eigen::Vector3d> intersect2;
-          for (int j = 0; j < 6; j++) {
-            if (rect->basis == sides[j].basis) {
-              continue;
-            }
-            intersect2 = sides[j].intersectionRay(r);
-            if (intersect2) {
-              RadiationVisualizer::visualizeRay(track_visualizer_pub, Ray::twopointCast(intersect1, *intersect2));
-              RadiationVisualizer::visualizePoint(point1_visualizer_pub, intersect1);
-              RadiationVisualizer::visualizePoint(point_visualizer_pub, *intersect2);
-              double track_length = (intersect1 - intersect2.get()).norm();
-              double pe_prob;
-              if (sources.find(it->first)->second.material == "Cs137") {
-                pe_prob = photoabsorptionProbability(track_length, sensor_material.pmac_Cs137, sensor_material.density) / diagonal_absorption_prob_Cs137;
-              } else if (sources.find(it->first)->second.material == "Am241") {
-                pe_prob = photoabsorptionProbability(track_length, sensor_material.pmac_Am241, sensor_material.density) / diagonal_absorption_prob_Am241;
-              } else {
-                pe_prob = 0;
-                ROS_FATAL("Unknown radiation source");
-              }
-              /* ROS_INFO("Track length: %.4f, Probability: %.4f", track_length, pe_prob); */
-              double coin_flip = rand_dbl(rand_gen);
-              if (coin_flip < pe_prob) {
-                captured_sum++;
-              }
-              break;
-            }
-          }
-          samples_sum++;
+          break;
         }
       }
     }
-    /* ROS_INFO("Realtime simulation. Samples generated: %d", samples_sum); */
+    auto time2 = std::chrono::high_resolution_clock::now();
+    std::cout << "Raytracing time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(time2 - time1).count() << "\n";
+    std::cout << "Average time per ray: " << std::chrono::duration_cast<std::chrono::nanoseconds>(time2 - time1).count() / ray_array.size() << "\n";
+
+    // TODO some magic to get (pre-time per ray + average time per ray) down to 30000 ns
+
     return captured_sum;
   }
   //}
@@ -342,48 +350,39 @@ namespace gazebo
   //}
 
   /* preprocessSources */  //{
-  std::map<unsigned int, std::vector<Rectangle>> Timepix::preprocessSources() {
+  // TODO idea - do not return faces. Sample the points on them already. Return Ray array
+  std::vector<Ray> Timepix::preprocessSources() {
 
-    std::map<unsigned int, std::vector<Rectangle>> ret;
-
-    ros::Time curr_time = ros::Time::now();
+    std::vector<Ray> ret;
+    ros::Time        curr_time = ros::Time::now();
     for (auto source = sources.begin(); source != sources.end();) {
-      std::vector<Rectangle> exposed_faces;
-      /* double                 samples_sum = 0; */
+      double diagonal_absorption_prob = source->second.material == "Cs137" ? diagonal_absorption_prob_Cs137 : diagonal_absorption_prob_Am241;
+
       // clear inactive sources
-      if (source->second.last_contact.toSec() + STEP_DURATION < curr_time.toSec()) {
+      if (source->second.last_contact.toSec() + SIMULATION_STEP < curr_time.toSec()) {
         ROS_INFO("[Timepix #%u]: No longer tracking source #%u. Reason: Timeout", node_handle_->GetId(), source->first);
         source = sources.erase(source);
         continue;
       }
 
-      // Side exposure check
-      for (int i = 0; i < 6; i++) {
+      /* // Side exposure check */
+      int exposed_faces = 0;
+      for (int i = 0; exposed_faces < 3 && i < 6; i++) {
         if (sides[i].normal_vector.dot(source->second.position - sides[i].center) > 0) {
+          ++exposed_faces;
+
+          // sample this side
           double apparent_activity = (source->second.activity / 4 * M_PI) * rectSolidAngle(sides[i], source->second.position);
-          source->second.apparent_activity += apparent_activity;
-          if (source->second.material == "Cs137") {
-            sides[i].samples = apparent_activity * STEP_DURATION * diagonal_absorption_prob_Cs137;
-          } else {
-            sides[i].samples = apparent_activity * STEP_DURATION * diagonal_absorption_prob_Am241;
-          }
-          exposed_faces.push_back(sides[i]);
-          if (exposed_faces.size() > 2) {
-            break;
+          double samples           = apparent_activity * SIMULATION_STEP * diagonal_absorption_prob;
+          for (int n = 0; n < samples; n++) {
+            Eigen::Vector3d point = sampleRectangle(sides[i]);
+
+            Ray r                             = Ray::twopointCast(source->second.position, point);
+            r.diagonal_absorption_probability = diagonal_absorption_prob;
+            ret.push_back(r);
           }
         }
       }
-
-      if (exposed_faces.size() > 2) {
-        RadiationVisualizer::visualizeRect(rect1_visualizer_pub, exposed_faces[0], 0.0, 0.8, 0.8);
-        RadiationVisualizer::visualizeRect(rect2_visualizer_pub, exposed_faces[1], 0.8, 0.2, 0.3);
-        RadiationVisualizer::visualizeRect(rect3_visualizer_pub, exposed_faces[2]);
-      }
-
-      /* ROS_INFO("Apparent activity of Source #%u: %.3f", source->first, source->second.apparent_activity); */
-      /* samples_sum += source->second.apparent_activity * STEP_DURATION; */
-      /* ROS_INFO("[Timepix #%u]: Source #%u requires %.0f samples", node_handle_->GetId(), source->first, source->second.apparent_activity * STEP_DURATION); */
-      ret.insert(std::pair<unsigned int, std::vector<Rectangle>>(source->first, exposed_faces));
       source++;
     }
     return ret;
