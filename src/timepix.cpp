@@ -22,10 +22,10 @@
 #include <geometry_utils.h>
 #include <radiation_utils.h>
 #include <rviz_visualizer.h>
-/* #include <materials.h> */
+#include <materials.h>
 
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
-#define STEP_DURATION 0.01                 // [s]
+#define STEP_DURATION 0.05                 // [s]
 
 #define FRONT 0
 #define BACK 1
@@ -44,12 +44,20 @@ namespace gazebo
     virtual ~Timepix();
 
     void QueueThread() {
-      static const double timeout = STEP_DURATION;
+      static const double timeout            = STEP_DURATION;
+      int                 photons_per_second = 0;
+      int                 counter            = 0;
       while (this->rosNode->ok()) {
         this->updatePosition(this->model_->WorldPose());
-        this->simulate();
-
+        photons_per_second += this->simulate();
         this->rosQueue.callAvailable(ros::WallDuration(timeout));
+        counter++;
+
+        if (counter >= (1 / STEP_DURATION)) {
+          ROS_INFO("[Timepix #%u]: Intensity %d Bq", this->node_handle_->GetId(), photons_per_second);
+          photons_per_second = 0;
+          counter            = 0;
+        }
       }
     }
 
@@ -68,12 +76,15 @@ namespace gazebo
 
     double sensor_size;
     double sensor_thickness;
-    /* Material sensor_material; */
-    double photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density);
+    double diagonal_length;
+    double diagonal_absorption_prob_Cs137;
+    double diagonal_absorption_prob_Am241;
+
+    Material sensor_material;
+    double   photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density);
 
     Rectangle sides[6];
 
-    void            updatePosition(ignition::math::Pose3d world_pose);
     Eigen::Vector3d sampleRectangle(Rectangle rect);
 
     physics::EntityPtr modelEntity;
@@ -84,7 +95,9 @@ namespace gazebo
 
     transport::NodePtr       node_handle_;
     transport::SubscriberPtr rad_sub;
-    void                     radiationCallback(RadiationSourceConstPtr &msg);
+
+    void updatePosition(ignition::math::Pose3d world_pose);
+    void radiationCallback(RadiationSourceConstPtr &msg);
 
     boost::thread callback_queue_thread_;
 
@@ -103,7 +116,8 @@ namespace gazebo
 
     std::string modelName;
 
-    void                                           simulate();
+    int simulate();  // runs one simulation step for this detector. Return number of captured photons
+
     std::map<unsigned int, std::vector<Rectangle>> preprocessSources();  // remove inactive sources, map source IDs to rectangles which will be sampled
   };
 
@@ -183,7 +197,13 @@ namespace gazebo
     /* this->sensor_size = 0.4; */
     this->sensor_thickness = 300e-06;
     /* this->sensor_thickness = 0.1; */
-    /* this->sensor_material  = Si; */
+    this->diagonal_length = std::sqrt(2 * sensor_size * sensor_size + sensor_thickness * sensor_thickness);
+    this->sensor_material = Si;
+
+    this->diagonal_absorption_prob_Cs137 = photoabsorptionProbability(diagonal_length, sensor_material.pmac_Cs137, sensor_material.density);
+    this->diagonal_absorption_prob_Am241 = photoabsorptionProbability(diagonal_length, sensor_material.pmac_Am241, sensor_material.density);
+
+    ROS_INFO("Probability of absorption on body diagonal: Cs137: %.4f, Am241: %.4f", diagonal_absorption_prob_Cs137, diagonal_absorption_prob_Am241);
 
     this->rad_sub = node_handle_->Subscribe("~/radiation", &Timepix::radiationCallback, this, false);
 
@@ -222,15 +242,17 @@ namespace gazebo
   //}
 
   /* simulate() */  //{
-  void Timepix::simulate() {
+  // return number of captured photons
+  int Timepix::simulate() {
     if (this->sources.empty()) {
-      return;
+      return 0;
     }
 
     std::map<unsigned int, std::vector<Rectangle>> exposed_faces = preprocessSources();
 
-    double begin_time  = ros::Time::now().toSec();
-    int    samples_sum = 0;
+    double begin_time   = ros::Time::now().toSec();
+    int    samples_sum  = 0;
+    int    captured_sum = 0;
     for (auto it = exposed_faces.begin(); it != exposed_faces.end(); it++) {
       std::vector<Rectangle> faces = it->second;
 
@@ -241,8 +263,8 @@ namespace gazebo
 
           Ray r = Ray::twopointCast(sources.find(it->first)->second.position, intersect1);
           if (ros::Time::now().toSec() > begin_time + STEP_DURATION) {
-            ROS_WARN("Sampling interrupted. Samples generated: %d", samples_sum);
-            return;
+            /* ROS_WARN("Sampling interrupted. Samples generated: %d", samples_sum); */
+            return captured_sum;
           }
           boost::optional<Eigen::Vector3d> intersect2;
           for (int j = 0; j < 6; j++) {
@@ -251,12 +273,24 @@ namespace gazebo
             }
             intersect2 = sides[j].intersectionRay(r);
             if (intersect2) {
-              /* RadiationVisualizer::visualizeRay(track_visualizer_pub, Ray::twopointCast(intersect1, *intersect2)); */
-              /* RadiationVisualizer::visualizePoint(point1_visualizer_pub, intersect1); */
-              /* RadiationVisualizer::visualizePoint(point_visualizer_pub, *intersect2); */
+              RadiationVisualizer::visualizeRay(track_visualizer_pub, Ray::twopointCast(intersect1, *intersect2));
+              RadiationVisualizer::visualizePoint(point1_visualizer_pub, intersect1);
+              RadiationVisualizer::visualizePoint(point_visualizer_pub, *intersect2);
               double track_length = (intersect1 - intersect2.get()).norm();
-              double pe_prob      = 1.0 - photoabsorptionProbability(track_length, 2.0016E+02, 2.230E+00);
-              ROS_INFO("Track length: %.4f, Probability: %.4f", track_length, (100 * pe_prob));
+              double pe_prob;
+              if (sources.find(it->first)->second.material == "Cs137") {
+                pe_prob = photoabsorptionProbability(track_length, sensor_material.pmac_Cs137, sensor_material.density) / diagonal_absorption_prob_Cs137;
+              } else if (sources.find(it->first)->second.material == "Am241") {
+                pe_prob = photoabsorptionProbability(track_length, sensor_material.pmac_Am241, sensor_material.density) / diagonal_absorption_prob_Am241;
+              } else {
+                pe_prob = 0;
+                ROS_FATAL("Unknown radiation source");
+              }
+              /* ROS_INFO("Track length: %.4f, Probability: %.4f", track_length, pe_prob); */
+              double coin_flip = rand_dbl(rand_gen);
+              if (coin_flip < pe_prob) {
+                captured_sum++;
+              }
               break;
             }
           }
@@ -264,8 +298,8 @@ namespace gazebo
         }
       }
     }
-    ROS_INFO("Realtime simulation. Samples generated: %d", samples_sum);
-    return;
+    /* ROS_INFO("Realtime simulation. Samples generated: %d", samples_sum); */
+    return captured_sum;
   }
   //}
 
@@ -323,12 +357,16 @@ namespace gazebo
         continue;
       }
 
-      // Exposure check
+      // Side exposure check
       for (int i = 0; i < 6; i++) {
         if (sides[i].normal_vector.dot(source->second.position - sides[i].center) > 0) {
           double apparent_activity = (source->second.activity / 4 * M_PI) * rectSolidAngle(sides[i], source->second.position);
           source->second.apparent_activity += apparent_activity;
-          sides[i].samples = apparent_activity * STEP_DURATION;
+          if (source->second.material == "Cs137") {
+            sides[i].samples = apparent_activity * STEP_DURATION * diagonal_absorption_prob_Cs137;
+          } else {
+            sides[i].samples = apparent_activity * STEP_DURATION * diagonal_absorption_prob_Am241;
+          }
           exposed_faces.push_back(sides[i]);
           if (exposed_faces.size() > 2) {
             break;
@@ -336,11 +374,11 @@ namespace gazebo
         }
       }
 
-      /* if (exposed_faces.size() > 2) { */
-      /*   RadiationVisualizer::visualizeRect(rect1_visualizer_pub, exposed_faces[0], 0.0, 0.8, 0.8); */
-      /*   RadiationVisualizer::visualizeRect(rect2_visualizer_pub, exposed_faces[1], 0.8, 0.2, 0.3); */
-      /*   RadiationVisualizer::visualizeRect(rect3_visualizer_pub, exposed_faces[2]); */
-      /* } */
+      if (exposed_faces.size() > 2) {
+        RadiationVisualizer::visualizeRect(rect1_visualizer_pub, exposed_faces[0], 0.0, 0.8, 0.8);
+        RadiationVisualizer::visualizeRect(rect2_visualizer_pub, exposed_faces[1], 0.8, 0.2, 0.3);
+        RadiationVisualizer::visualizeRect(rect3_visualizer_pub, exposed_faces[2]);
+      }
 
       /* ROS_INFO("Apparent activity of Source #%u: %.3f", source->first, source->second.apparent_activity); */
       /* samples_sum += source->second.apparent_activity * STEP_DURATION; */
@@ -353,7 +391,7 @@ namespace gazebo
   //}
 
   double Timepix::photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density) {
-    return std::exp(-mass_att_coeff * material_thickness * material_density);
+    return 1.0 - std::exp(-mass_att_coeff * material_thickness * 100 * material_density);
   }
 
 }  // namespace gazebo
