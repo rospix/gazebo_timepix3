@@ -1,6 +1,6 @@
 #include <rviz_visualizer.h>
 
-void RadiationVisualizer::visualizeSources(ros::Publisher pub, std::map<unsigned int, Source> sources) {
+void RadiationVisualizer::visualizeSources(ros::Publisher pub, std::vector<Source> sources) {
   visualization_msgs::Marker marker;
   marker.header.frame_id    = "/base_link";
   marker.header.stamp       = ros::Time::now();
@@ -19,9 +19,9 @@ void RadiationVisualizer::visualizeSources(ros::Publisher pub, std::map<unsigned
 
   for (auto const& s : sources) {
     geometry_msgs::Point p;
-    p.x = s.second.position[0];
-    p.y = s.second.position[1];
-    p.z = s.second.position[2];
+    p.x = s.relative_position[0];
+    p.y = s.relative_position[1];
+    p.z = s.relative_position[2];
 
     marker.points.push_back(p);
   }

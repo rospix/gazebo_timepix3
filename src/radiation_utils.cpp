@@ -4,8 +4,10 @@ Source::Source() {
 }
 Source::~Source() {
 }
-Source::Source(std::string material, double activity, Eigen::Vector3d position) {
-  this->material = material;
-  this->activity = activity;
-  this->position = position;
+Source::Source(unsigned int id, std::string material, double activity, std::vector<double> apparent_activities, Eigen::Vector3d relative_position) {
+  this->id                  = id;
+  this->material            = material;
+  this->activity            = activity;
+  this->apparent_activities = apparent_activities;
+  this->relative_position   = relative_position;
 }

@@ -5,18 +5,14 @@
 Ray::Ray() {
   this->p1 = Eigen::Vector3d(0.0, 0.0, 0.0);
   this->p2 = Eigen::Vector3d(0.0, 0.0, 0.0);
-
-  this->diagonal_absorption_probability = 0.0;
 }
 
 Ray::~Ray() {
 }
 
-Ray::Ray(Eigen::Vector3d p1, Eigen::Vector3d p2, double diagonal_absorption_probability) {
+Ray::Ray(Eigen::Vector3d p1, Eigen::Vector3d p2) {
   this->p1 = p1;
   this->p2 = p2;
-
-  this->diagonal_absorption_probability = diagonal_absorption_probability;
 }
 
 Plane::Plane() {
@@ -36,8 +32,7 @@ boost::optional<Eigen::Vector3d> Plane::intersectionRay(Ray r, double epsilon) {
   if (abs(denom) < epsilon) {
     return boost::optional<Eigen::Vector3d>{};
   }
-  Eigen::Vector3d p0l0 = this->point - r.p1;
-  double          t    = this->normal.dot(p0l0) / denom;
+  double t = this->normal.dot(this->point - r.p1) / denom;
   if (t >= 0) {
     return Eigen::Vector3d(t * r.p2);
   } else {
@@ -67,7 +62,6 @@ Rectangle::Rectangle(Eigen::Vector3d A, Eigen::Vector3d B, Eigen::Vector3d C, Ei
   if (A == B || A == C || A == D || B == C || B == D || C == D) {
     return;
   }
-  this->center = (A + B + C + D) / 4;
 
   this->plane = Plane(A, normal_vector);
 
