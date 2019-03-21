@@ -1,8 +1,8 @@
 #include <rviz_visualizer.h>
 
-void RadiationVisualizer::visualizeSources(ros::Publisher pub, std::vector<Source> sources) {
+void RadiationVisualizer::visualizeSources(ros::Publisher pub, std::vector<Source> sources, std::string frame) {
   visualization_msgs::Marker marker;
-  marker.header.frame_id    = "/base_link";
+  marker.header.frame_id    = frame;
   marker.header.stamp       = ros::Time::now();
   marker.ns                 = "sources";
   marker.action             = visualization_msgs::Marker::ADD;
@@ -28,10 +28,9 @@ void RadiationVisualizer::visualizeSources(ros::Publisher pub, std::vector<Sourc
   pub.publish(marker);
 }
 
-
-void RadiationVisualizer::visualizeRay(ros::Publisher pub, Ray ray) {
+void RadiationVisualizer::visualizeRay(ros::Publisher pub, Ray ray, std::string frame) {
   visualization_msgs::Marker line_strip;
-  line_strip.header.frame_id    = "/base_link";
+  line_strip.header.frame_id    = frame;
   line_strip.header.stamp       = ros::Time::now();
   line_strip.ns                 = "ray";
   line_strip.action             = visualization_msgs::Marker::ADD;
@@ -58,9 +57,10 @@ void RadiationVisualizer::visualizeRay(ros::Publisher pub, Ray ray) {
   line_strip.points.push_back(p2);
   pub.publish(line_strip);
 }
-void RadiationVisualizer::visualizePoint(ros::Publisher pub, Eigen::Vector3d p, double r, double g, double b) {
+
+void RadiationVisualizer::visualizePoint(ros::Publisher pub, Eigen::Vector3d p, std::string frame, double r, double g, double b) {
   visualization_msgs::Marker marker;
-  marker.header.frame_id    = "/base_link";
+  marker.header.frame_id    = frame;
   marker.header.stamp       = ros::Time::now();
   marker.ns                 = "point";
   marker.action             = visualization_msgs::Marker::ADD;
@@ -85,9 +85,10 @@ void RadiationVisualizer::visualizePoint(ros::Publisher pub, Eigen::Vector3d p, 
 
   pub.publish(marker);
 }
-void RadiationVisualizer::visualizeRect(ros::Publisher pub, Rectangle rect, double r, double g, double b) {
+
+void RadiationVisualizer::visualizeRect(ros::Publisher pub, Rectangle rect, std::string frame, double r, double g, double b) {
   visualization_msgs::Marker line_strip;
-  line_strip.header.frame_id    = "/base_link";
+  line_strip.header.frame_id    = frame;
   line_strip.header.stamp       = ros::Time::now();
   line_strip.ns                 = "rect";
   line_strip.action             = visualization_msgs::Marker::ADD;
@@ -129,4 +130,3 @@ void RadiationVisualizer::visualizeRect(ros::Publisher pub, Rectangle rect, doub
   pub.publish(line_strip);
   ros::spinOnce();
 }
-

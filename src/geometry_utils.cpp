@@ -11,8 +11,9 @@ Ray::~Ray() {
 }
 
 Ray::Ray(Eigen::Vector3d p1, Eigen::Vector3d p2) {
-  this->p1 = p1;
-  this->p2 = p2;
+  this->p1        = p1;
+  this->p2        = p2;
+  this->direction = p2 - p1;
 }
 
 Plane::Plane() {
@@ -34,7 +35,7 @@ boost::optional<Eigen::Vector3d> Plane::intersectionRay(Ray r, double epsilon) {
   }
   double t = this->normal.dot(this->point - r.p1) / denom;
   if (t >= 0) {
-    return Eigen::Vector3d(t * r.p2);
+    return Eigen::Vector3d(r.p1 + t * r.direction);
   } else {
     return boost::optional<Eigen::Vector3d>{};
   }
@@ -145,4 +146,18 @@ Eigen::Vector3d pos3toVector3d(ignition::math::Pose3d gzpos) {
   v[1] = gzpos.Pos().Y();
   v[2] = gzpos.Pos().Z();
   return v;
+}
+
+Eigen::Quaterniond pos3toQuaterniond(ignition::math::Pose3d gzpos) {
+  Eigen::Quaterniond q(gzpos.Rot().W(), gzpos.Rot().X(), gzpos.Rot().Y(), gzpos.Rot().Z());
+  return q;
+}
+
+Rectangle move(Rectangle r, Eigen::Vector3d translation, Eigen::Quaterniond rotation) {
+  // TODO Needs copy constructor
+  Rectangle ret;
+  for (int i = 0; i < 4; i++) {
+    ret.points.push_back((rotation * r.points[i]) + translation);
+  }
+  return ret;
 }

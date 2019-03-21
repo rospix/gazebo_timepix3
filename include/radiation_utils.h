@@ -3,6 +3,7 @@
 
 #include <string>
 #include <set>
+#include <chrono>
 #include <eigen3/Eigen/Core>
 #include <geometry_utils.h>
 #include <ros/time.h>
@@ -19,7 +20,8 @@ public:
   std::vector<double> apparent_activities;
   std::vector<int>    exposed_sides;
   Eigen::Vector3d     relative_position;
-  ros::Time           last_contact;
+
+  std::chrono::high_resolution_clock::time_point last_contact;
 };
 
 #endif
