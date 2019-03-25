@@ -20,9 +20,9 @@
 
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
 
-#include <geometry_utils.h>
+#include <geometry_visual_utils/visual_utils.h>
+
 #include <radiation_utils.h>
-#include <rviz_visualizer.h>
 #include <materials.h>
 
 #include <chrono>
@@ -60,6 +60,11 @@ namespace gazebo
           ros::Duration(1.0).sleep();
           continue;
         }
+        bv.clear();
+        for (int i = 0; i < 6; i++) {
+          bv.addRect(sides[i]);
+        }
+
         auto sim_start = std::chrono::high_resolution_clock::now();
         sources_mutex.lock();
         int captured_photons = simulate(sim_start);
@@ -71,6 +76,8 @@ namespace gazebo
         std_msgs::Int32 msg;
         msg.data = captured_photons;
         medipix_pub.publish(msg);
+
+        bv.publish();
       }
     }
 
@@ -134,6 +141,8 @@ namespace gazebo
 
     int  simulate(std::chrono::high_resolution_clock::time_point time_start);
     void oneDebuggingRay();
+
+    BatchVisualizer bv;
   };
 
   GZ_REGISTER_MODEL_PLUGIN(Timepix)
@@ -255,10 +264,10 @@ namespace gazebo
 
     this->modelName = model_->GetName();
 
-    this->sensor_size      = 0.01408;
-    this->sensor_thickness = 300e-06;
-    /* this->sensor_size      = 0.4; */
-    /* this->sensor_thickness = 0.1; */
+    /* this->sensor_size      = 0.01408; */
+    /* this->sensor_thickness = 300e-06; */
+    this->sensor_size      = 0.4;
+    this->sensor_thickness = 0.1;
 
     this->diagonal_length = std::sqrt(2 * sensor_size * sensor_size + sensor_thickness * sensor_thickness);
     this->sensor_material = Si;
@@ -280,6 +289,8 @@ namespace gazebo
     for (int i = 0; i < 6; i++) {
       sides.push_back(Rectangle());
     }
+
+    bv = BatchVisualizer(*this->rosNode.get(), "/base_link");
 
     Eigen::Vector3d A(sensor_thickness / 2.0, -sensor_size / 2.0, -sensor_size / 2.0);
     Eigen::Vector3d B(sensor_thickness / 2.0, sensor_size / 2.0, -sensor_size / 2.0);
@@ -328,26 +339,16 @@ namespace gazebo
         continue;
       }
 
-      // VISUALIZE
-      /* if (s->exposed_sides.size() > 0) { */
-      /* RadiationVisualizer::visualizeRect(rect1_visualizer_pub, sides[s->exposed_sides[0]], "/base_link"); */
-      /* rect1_visualizer_pub, move(sides[s->exposed_sides[0]], pos3toVector3d(model_->WorldPose()), pos3toQuaterniond(model_->WorldPose())),
-                "/base_link"); */
-      /* } */
-      /* if (s->exposed_sides.size() > 1) { */
-      /* RadiationVisualizer::visualizeRect(rect2_visualizer_pub, sides[s->exposed_sides[1]], "/base_link"); */
-      /* rect2_visualizer_pub, move(sides[s->exposed_sides[1]], pos3toVector3d(model_->WorldPose()),
-                 pos3toQuaterniond(model_->WorldPose())),
-                 "/base_link"); */
-      /* } */
-      /* if (s->exposed_sides.size() > 2) { */
-      /* RadiationVisualizer::visualizeRect(rect3_visualizer_pub, sides[s->exposed_sides[2]], "/base_link"); */
-      /* rect3_visualizer_pub, move(sides[s->exposed_sides[2]], pos3toVector3d(model_->WorldPose()), pos3toQuaterniond(model_->WorldPose())),
-         "/base_link"); */
-      /* } */
-      /* // VISUALIZE */
+      /* VISUALIZE //{ */
+      bv.addPoint(s->relative_position);
+      /* //} VISUALIZE */
+
 
       for (size_t i = 0; i < s->exposed_sides.size(); i++) {
+
+        /* VISUALIZE //{ */
+        bv.addRect(sides[s->exposed_sides[i]]);
+        /* //} VISUALIZE */
 
         int samples;
         if (s->material == "Cs137") {
@@ -369,7 +370,12 @@ namespace gazebo
             return photons_captured;
           }
           Eigen::Vector3d intersect1 = sampleSide(s->exposed_sides[i]);
-          Ray             r          = Ray::twopointCast(s->relative_position, intersect1);
+
+          Ray r = Ray::twopointCast(s->relative_position, intersect1);
+
+          /* VISUALIZE //{ */
+          bv.addRay(r);
+          /* //} VISUALIZE */
 
           for (int j = 0; j < 6; j++) {
             if (j == s->exposed_sides[i]) {
@@ -388,6 +394,10 @@ namespace gazebo
               double coin_flip = rand_dbl(rand_gen);
               if (coin_flip < pe_prob) {
                 photons_captured++;
+                /* VISUALIZE //{ */
+                Ray track = Ray::twopointCast(intersect1, intersect2.get());
+                bv.addRay(track, 1.0, 0.5, 0.0);
+                /* //} VISUALIZE */
               }
               break;
             }
@@ -399,6 +409,11 @@ namespace gazebo
     long elapsed_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - time_start).count();
     /* ROS_INFO("Simulated particles: %d, Captured: %d, Time: %ld ns", photons_total, photons_captured, elapsed_nanoseconds); */
     /* ROS_INFO("Simulation speed: %.3f particles per second", (photons_total * 1E9) / elapsed_nanoseconds); */
+
+    /* VISUALIZE //{ */
+    /* bv.publish(); */
+    /* //} VISUALIZE */
+
     return photons_captured;
   }  // namespace gazebo
 

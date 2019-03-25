@@ -17,6 +17,7 @@
   <build_depend>message_generation</build_depend> 
   <build_depend>std_msgs</build_depend>
   <build_depend>gazebo_rad_msgs</build_depend>
+  <build_depend>geometry_visual_utils</build_depend>
 
   <run_depend>sitl_gazebo</run_depend>
   <run_depend>cmake_modules</run_depend>
@@ -26,6 +27,7 @@
   <run_depend>message_runtime</run_depend>
   <run_depend>std_msgs</run_depend>
   <run_depend>gazebo_rad_msgs</run_depend>
+  <run_depend>geometry_visual_utils</run_depend>
 
   <export>
     <gazebo_ros
