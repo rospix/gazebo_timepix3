@@ -61,9 +61,10 @@ namespace gazebo
           continue;
         }
         bv.clear();
-        for (int i = 0; i < 6; i++) {
-          bv.addRect(sides[i]);
-        }
+        bv.addBox(box);
+        /* for (int i = 0; i < 6; i++) { */
+          /* bv.addRect(sides[i]); */
+        /* } */
 
         auto sim_start = std::chrono::high_resolution_clock::now();
         sources_mutex.lock();
@@ -143,6 +144,7 @@ namespace gazebo
     void oneDebuggingRay();
 
     BatchVisualizer bv;
+    Box             box;
   };
 
   GZ_REGISTER_MODEL_PLUGIN(Timepix)
@@ -266,8 +268,8 @@ namespace gazebo
 
     /* this->sensor_size      = 0.01408; */
     /* this->sensor_thickness = 300e-06; */
-    this->sensor_size      = 0.4;
-    this->sensor_thickness = 0.1;
+    this->sensor_size      = 0.2;
+    this->sensor_thickness = 0.05;
 
     this->diagonal_length = std::sqrt(2 * sensor_size * sensor_size + sensor_thickness * sensor_thickness);
     this->sensor_material = Si;
@@ -283,8 +285,6 @@ namespace gazebo
     ss << "/timepix" << model_->GetId() << "/photon_count";
     this->medipix_pub = this->rosNode->advertise<std_msgs::Int32>(ss.str().c_str(), 100);
 
-    this->rosQueueThread = std::thread(std::bind(&Timepix::QueueThread, this));
-    this->simThread      = std::thread(std::bind(&Timepix::SimulationThread, this));
 
     for (int i = 0; i < 6; i++) {
       sides.push_back(Rectangle());
@@ -308,6 +308,12 @@ namespace gazebo
     sides[RIGHT]  = Rectangle(F, A, D, G);
     sides[BOTTOM] = Rectangle(F, E, B, A);
     sides[TOP]    = Rectangle(D, C, H, G);
+
+    /* box = Box(Eigen::Vector3d(0, 0, 0), sensor_thickness, sensor_size, sensor_size); */
+    box = Box(A, B, C, D, E, F, G, H);
+
+    this->simThread      = std::thread(std::bind(&Timepix::SimulationThread, this));
+    this->rosQueueThread = std::thread(std::bind(&Timepix::QueueThread, this));
 
     ROS_INFO("[Timepix]: initialized");
   }
@@ -340,14 +346,14 @@ namespace gazebo
       }
 
       /* VISUALIZE //{ */
-      bv.addPoint(s->relative_position);
+      /* bv.addPoint(s->relative_position); */
       /* //} VISUALIZE */
 
 
       for (size_t i = 0; i < s->exposed_sides.size(); i++) {
 
         /* VISUALIZE //{ */
-        bv.addRect(sides[s->exposed_sides[i]]);
+        /* bv.addRect(sides[s->exposed_sides[i]]); */
         /* //} VISUALIZE */
 
         int samples;
@@ -374,7 +380,7 @@ namespace gazebo
           Ray r = Ray::twopointCast(s->relative_position, intersect1);
 
           /* VISUALIZE //{ */
-          bv.addRay(r);
+          /* bv.addRay(r); */
           /* //} VISUALIZE */
 
           for (int j = 0; j < 6; j++) {
@@ -396,7 +402,7 @@ namespace gazebo
                 photons_captured++;
                 /* VISUALIZE //{ */
                 Ray track = Ray::twopointCast(intersect1, intersect2.get());
-                bv.addRay(track, 1.0, 0.5, 0.0);
+                /* bv.addRay(track, 1.0, 0.5, 0.0); */
                 /* //} VISUALIZE */
               }
               break;
