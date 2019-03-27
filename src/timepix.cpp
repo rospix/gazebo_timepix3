@@ -19,6 +19,7 @@
 #include <mutex>
 
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
+#include <gazebo_rad_msgs/RadiationObstacle.pb.h>
 
 #include <geometry_visual_utils/visual_utils.h>
 
@@ -61,9 +62,9 @@ namespace gazebo
           continue;
         }
         bv.clear();
-        bv.addBox(box);
+        bv.addCuboid(sensor_cuboid);
         /* for (int i = 0; i < 6; i++) { */
-          /* bv.addRect(sides[i]); */
+        /* bv.addRect(sides[i]); */
         /* } */
 
         auto sim_start = std::chrono::high_resolution_clock::now();
@@ -82,7 +83,8 @@ namespace gazebo
       }
     }
 
-    typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource> RadiationSourceConstPtr;
+    typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource>   RadiationSourceConstPtr;
+    typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationObstacle> RadiationObstacleConstPtr;
 
   protected:
     virtual void Load(physics::ModelPtr _model, sdf::ElementPtr _sdf);
@@ -94,6 +96,9 @@ namespace gazebo
 
     std::vector<Source> sources;
     std::mutex          sources_mutex;
+
+    std::vector<Obstacle> obstacles;
+    std::mutex            obstacles_mutex;
 
     bool terminated = false;
 
@@ -107,7 +112,8 @@ namespace gazebo
     double   photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density);
 
     void updatePosition(ignition::math::Pose3d world_pose);
-    void radiationCallback(RadiationSourceConstPtr &msg);
+    void sourcesCallback(RadiationSourceConstPtr &msg);
+    void obstaclesCallback(RadiationObstacleConstPtr &msg);
 
     std::vector<Rectangle> sides;
     Eigen::Vector3d        sampleRectangle(Rectangle rect);
@@ -122,7 +128,8 @@ namespace gazebo
     Eigen::Quaterniond world2local;
 
     transport::NodePtr       node_handle_;
-    transport::SubscriberPtr rad_sub;
+    transport::SubscriberPtr sources_sub;
+    transport::SubscriberPtr obstacles_sub;
 
     boost::thread callback_queue_thread_;
 
@@ -144,7 +151,8 @@ namespace gazebo
     void oneDebuggingRay();
 
     BatchVisualizer bv;
-    Box             box;
+
+    Cuboid sensor_cuboid;
   };
 
   GZ_REGISTER_MODEL_PLUGIN(Timepix)
@@ -172,9 +180,8 @@ namespace gazebo
 
   //}
 
-  /* radiationCallback() //{ */
-
-  void Timepix::radiationCallback(RadiationSourceConstPtr &msg) {
+  /* sourcesCallback() //{ */
+  void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
 
     sources_mutex.lock();
     Eigen::Vector3d pos(msg->x(), msg->y(), msg->z());
@@ -220,7 +227,45 @@ namespace gazebo
     ROS_INFO("Added to list");
     sources_mutex.unlock();
   }
+  //}
 
+  /* obstaclesCallback() //{ */
+  void Timepix::obstaclesCallback(RadiationObstacleConstPtr &msg) {
+
+    obstacles_mutex.lock();
+    Eigen::Vector3d pos(msg->pos_x(), msg->pos_y(), msg->pos_z());
+
+    for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
+      // known obstacle -> update its params
+      if (o->id == msg->id()) {
+        Eigen::Vector3d relative_position = world2local * (pos - pos3toVector3d(model_->WorldPose()));
+
+        ////TODO
+        //
+        //
+        ////TODO
+
+        obstacles_mutex.unlock();
+        return;
+      }
+    }
+    // new obstacle -> compute params and add to list
+    ROS_INFO("[Timepix%u]: Registered Obstacle%u", model_->GetId(), msg->id());
+    Eigen::Vector3d relative_position = world2local * (pos - pos3toVector3d(model_->WorldPose()));
+
+    Cuboid   c;
+    Obstacle o(relative_position, c, msg->material());
+
+    ////TODO
+    //
+    //
+    ////TODO
+
+    obstacles_mutex.unlock();
+  }
+  //}
+
+  /* Sampling //{ */
   Eigen::Vector3d Timepix::sampleRectangle(Rectangle r) {
 
     double k1 = rand_dbl(rand_gen);
@@ -279,7 +324,8 @@ namespace gazebo
 
     ROS_INFO("Probability of absorption on body diagonal: Cs137: %.4f, Am241: %.4f", diagonal_absorption_prob_Cs137, diagonal_absorption_prob_Am241);
 
-    this->rad_sub = node_handle_->Subscribe("~/radiation", &Timepix::radiationCallback, this, false);
+    this->sources_sub = node_handle_->Subscribe("~/radiation/sources", &Timepix::sourcesCallback, this, false);
+    /* this->obstacles_sub = node_handle_->Subscribe("~/radiation/obstacles", &Timepix::obstaclesCallback, this, false); */
 
     std::stringstream ss;
     ss << "/timepix" << model_->GetId() << "/photon_count";
@@ -309,8 +355,8 @@ namespace gazebo
     sides[BOTTOM] = Rectangle(F, E, B, A);
     sides[TOP]    = Rectangle(D, C, H, G);
 
-    /* box = Box(Eigen::Vector3d(0, 0, 0), sensor_thickness, sensor_size, sensor_size); */
-    box = Box(A, B, C, D, E, F, G, H);
+    /* sensor_cuboid = Cuboid(Eigen::Vector3d(0, 0, 0), sensor_thickness, sensor_size, sensor_size); */
+    sensor_cuboid = Cuboid(A, B, C, D, E, F, G, H);
 
     this->simThread      = std::thread(std::bind(&Timepix::SimulationThread, this));
     this->rosQueueThread = std::thread(std::bind(&Timepix::QueueThread, this));
