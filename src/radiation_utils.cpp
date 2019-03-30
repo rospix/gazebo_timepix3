@@ -18,8 +18,9 @@ Obstacle::Obstacle() {
 Obstacle::~Obstacle() {
 }
 
-Obstacle::Obstacle(Eigen::Vector3d center, Cuboid cuboid, std::string material) {
-  this->center = center;
+Obstacle::Obstacle(Cuboid cuboid, Eigen::Vector3d center, Eigen::Quaterniond orientation, Material material) {
   this->cuboid = cuboid;
+  this->center = center;
+  this->orientation = orientation;
   this->material = material;
 }

@@ -8,6 +8,7 @@
 #include <eigen3/Eigen/Core>
 #include <geometry_visual_utils/geometry_utils.h>
 #include <ros/time.h>
+#include <materials.h>
 
 class Source {
 public:
@@ -29,12 +30,15 @@ class Obstacle {
 public:
   Obstacle();
   ~Obstacle();
-  Obstacle(Eigen::Vector3d center, Cuboid cuboid, std::string material);
+  Obstacle(Cuboid cuboid, Eigen::Vector3d center, Eigen::Quaterniond orientation, Material material);
 
-  unsigned int    id = 1;
-  std::string     material;
-  Eigen::Vector3d center;
-  Cuboid          cuboid;
+  unsigned int       id = 1;
+  Material           material;
+  Eigen::Vector3d    center;
+  Eigen::Quaterniond orientation;
+  Cuboid             cuboid;
+
+  std::chrono::high_resolution_clock::time_point last_contact;
 };
 
 #endif

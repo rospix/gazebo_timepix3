@@ -30,8 +30,8 @@
 
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
 
-#define TIMEOUT 1.5           // [s]
-#define SIMULATION_STEP 0.01  // [s]
+#define TIMEOUT 1.5          // [s]
+#define SIMULATION_STEP 0.1  // [s]
 
 #define FRONT 0
 #define BACK 1
@@ -63,9 +63,22 @@ namespace gazebo
         }
         bv.clear();
         bv.addCuboid(sensor_cuboid);
-        /* for (int i = 0; i < 6; i++) { */
-        /* bv.addRect(sides[i]); */
-        /* } */
+
+        obstacles_mutex.lock();
+        for (auto o = obstacles.begin(); o != obstacles.end();) {
+          bv.addCuboid(o->cuboid, 0.4, 0.9, 0.4);
+          if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - o->last_contact).count() > TIMEOUT) {
+            ROS_INFO("[Timepix%u]: No longer tracking Obstacle%u. Reason: Timeout", model_->GetId(), o->id);
+            obstacles.erase(o);
+            continue;
+          }
+          o++;
+        }
+        obstacles_mutex.unlock();
+
+        for (Source s : sources) {
+          bv.addPoint(s.relative_position);
+        }
 
         auto sim_start = std::chrono::high_resolution_clock::now();
         sources_mutex.lock();
@@ -147,8 +160,9 @@ namespace gazebo
 
     std::string modelName;
 
-    int  simulate(std::chrono::high_resolution_clock::time_point time_start);
-    void oneDebuggingRay();
+    int    simulate(std::chrono::high_resolution_clock::time_point time_start);
+    void   oneDebuggingRay();
+    double getObstacleAttenuation(Source s);  // percentage of particles which will get absorbed by obstacles
 
     BatchVisualizer bv;
 
@@ -232,18 +246,27 @@ namespace gazebo
   /* obstaclesCallback() //{ */
   void Timepix::obstaclesCallback(RadiationObstacleConstPtr &msg) {
 
-    obstacles_mutex.lock();
-    Eigen::Vector3d pos(msg->pos_x(), msg->pos_y(), msg->pos_z());
+    Eigen::Vector3d    obstacle_pos(msg->pos_x(), msg->pos_y(), msg->pos_z());
+    Eigen::Quaterniond obstacle_ori(msg->ori_w(), msg->ori_x(), msg->ori_y(), msg->ori_z());
 
+    double depth  = msg->scale_x();
+    double width  = msg->scale_y();
+    double height = msg->scale_z();
+
+    obstacles_mutex.lock();
     for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
       // known obstacle -> update its params
       if (o->id == msg->id()) {
-        Eigen::Vector3d relative_position = world2local * (pos - pos3toVector3d(model_->WorldPose()));
+        Eigen::Quaterniond sensor_ori(model_->WorldPose().Rot().W(), model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(),
+                                      model_->WorldPose().Rot().Z());
+        Eigen::Vector3d    relative_position    = world2local * (obstacle_pos - pos3toVector3d(model_->WorldPose()));
+        Eigen::Quaterniond relative_orientation = obstacle_ori * world2local;
 
-        ////TODO
-        //
-        //
-        ////TODO
+        o->center       = relative_position;
+        o->orientation  = relative_orientation;
+        o->orientation  = obstacle_ori;
+        o->cuboid       = Cuboid(relative_position, relative_orientation, depth, width, height);
+        o->last_contact = std::chrono::high_resolution_clock::now();
 
         obstacles_mutex.unlock();
         return;
@@ -251,16 +274,16 @@ namespace gazebo
     }
     // new obstacle -> compute params and add to list
     ROS_INFO("[Timepix%u]: Registered Obstacle%u", model_->GetId(), msg->id());
-    Eigen::Vector3d relative_position = world2local * (pos - pos3toVector3d(model_->WorldPose()));
+    Eigen::Vector3d    relative_position = world2local * (obstacle_pos - pos3toVector3d(model_->WorldPose()));
+    Eigen::Quaterniond relative_orientation(model_->WorldPose().Rot().W(), model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(),
+                                            model_->WorldPose().Rot().Z());
 
-    Cuboid   c;
-    Obstacle o(relative_position, c, msg->material());
+    Cuboid   c(relative_position, relative_orientation, depth, width, height);
+    Obstacle o(c, relative_position, relative_orientation, Si);
+    o.id           = msg->id();
+    o.last_contact = std::chrono::high_resolution_clock::now();
 
-    ////TODO
-    //
-    //
-    ////TODO
-
+    obstacles.push_back(o);
     obstacles_mutex.unlock();
   }
   //}
@@ -324,8 +347,8 @@ namespace gazebo
 
     ROS_INFO("Probability of absorption on body diagonal: Cs137: %.4f, Am241: %.4f", diagonal_absorption_prob_Cs137, diagonal_absorption_prob_Am241);
 
-    this->sources_sub = node_handle_->Subscribe("~/radiation/sources", &Timepix::sourcesCallback, this, false);
-    /* this->obstacles_sub = node_handle_->Subscribe("~/radiation/obstacles", &Timepix::obstaclesCallback, this, false); */
+    this->sources_sub   = node_handle_->Subscribe("~/radiation/sources", &Timepix::sourcesCallback, this, false);
+    this->obstacles_sub = node_handle_->Subscribe("~/radiation/obstacles", &Timepix::obstaclesCallback, this, false);
 
     std::stringstream ss;
     ss << "/timepix" << model_->GetId() << "/photon_count";
@@ -355,7 +378,6 @@ namespace gazebo
     sides[BOTTOM] = Rectangle(F, E, B, A);
     sides[TOP]    = Rectangle(D, C, H, G);
 
-    /* sensor_cuboid = Cuboid(Eigen::Vector3d(0, 0, 0), sensor_thickness, sensor_size, sensor_size); */
     sensor_cuboid = Cuboid(A, B, C, D, E, F, G, H);
 
     this->simThread      = std::thread(std::bind(&Timepix::SimulationThread, this));
@@ -370,8 +392,8 @@ namespace gazebo
 
   void Timepix::OnUpdate(const common::UpdateInfo &) {
     ignition::math::Quaterniond q = model_->WorldPose().Rot();
-    world2local                   = Eigen::Quaterniond(q.W(), q.X(), q.Y(), q.Z());
-    local2world                   = world2local.inverse();
+    local2world                   = Eigen::Quaterniond(q.W(), q.X(), q.Y(), q.Z());
+    world2local                   = local2world.inverse();
   }
   //}
 
@@ -390,6 +412,12 @@ namespace gazebo
         sources.erase(s);
         continue;
       }
+      auto   time1            = std::chrono::high_resolution_clock::now();
+      double count_multiplier = getObstacleAttenuation(*s);
+      auto   time2            = std::chrono::high_resolution_clock::now();
+
+      /* std::cout << "Time used: " << std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count() << "\n"; */
+      /* ROS_INFO("Count multiplier due to obstacles: %.3f", count_multiplier); */
 
       /* VISUALIZE //{ */
       /* bv.addPoint(s->relative_position); */
@@ -411,6 +439,8 @@ namespace gazebo
           return 0;
         }
 
+        samples = samples * count_multiplier;
+
         /* ROS_INFO("Generating %d samples for side %d", samples, s->exposed_sides[i]); */
         for (int n = 0; n < samples; n++) {
           photons_total++;
@@ -426,7 +456,7 @@ namespace gazebo
           Ray r = Ray::twopointCast(s->relative_position, intersect1);
 
           /* VISUALIZE //{ */
-          /* bv.addRay(r); */
+          bv.addRay(r);
           /* //} VISUALIZE */
 
           for (int j = 0; j < 6; j++) {
@@ -448,7 +478,7 @@ namespace gazebo
                 photons_captured++;
                 /* VISUALIZE //{ */
                 Ray track = Ray::twopointCast(intersect1, intersect2.get());
-                /* bv.addRay(track, 1.0, 0.5, 0.0); */
+                bv.addRay(track, 1.0, 0.5, 0.0);
                 /* //} VISUALIZE */
               }
               break;
@@ -467,9 +497,38 @@ namespace gazebo
     /* //} VISUALIZE */
 
     return photons_captured;
-  }  // namespace gazebo
+  }
 
   double Timepix::photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density) {
     return 1.0 - std::exp(-mass_att_coeff * material_thickness * 100 * material_density);
+  }
+
+  // return percentage of particles which will survive their way through obstacles
+  double Timepix::getObstacleAttenuation(Source s) {
+    obstacles_mutex.lock();
+    Ray r = Ray::twopointCast(s.relative_position, Eigen::Vector3d(0.0, 0.0, 0.0));
+    /* ROS_INFO("[Timepix]: Casting ray"); */
+    double ret = 1.0;
+    for (Obstacle o : obstacles) {
+      std::vector<Eigen::Vector3d> intersections;
+      // TODO get intersection with all sides
+      for (int i = 0; i < 6; i++) {
+        boost::optional<Eigen::Vector3d> intersect = o.cuboid.sides[i].intersectionRay(r);
+        if (intersect) {
+          intersections.push_back(*intersect);
+        }
+      }
+      if (intersections.size() > 1) {
+        double track_length = (intersections[1] - intersections[0]).norm();
+        ROS_INFO("Timepix: Obstacle track length: %.3f", track_length);
+        Ray obstacle_track = Ray::twopointCast(intersections[1], intersections[0]);
+        /* bv.addRay(obstacle_track, 1.0, 1.0, 0.3); */
+        /* ret *= (1 - photoabsorptionProbability(track_length, o.material.pmac_Am241, o.material.density)); */
+        //AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        ret *= (1 - photoabsorptionProbability(0.2*track_length, o.material.pmac_Am241, o.material.density));
+      }
+    }
+    obstacles_mutex.unlock();
+    return ret;
   }
 }  // namespace gazebo
