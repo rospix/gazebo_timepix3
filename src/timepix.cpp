@@ -61,12 +61,12 @@ namespace gazebo
           ros::Duration(1.0).sleep();
           continue;
         }
-        bv.clear();
-        bv.addCuboid(sensor_cuboid);
+        /* bv.clear(); */
+        /* bv.addCuboid(sensor_cuboid); */
 
         obstacles_mutex.lock();
         for (auto o = obstacles.begin(); o != obstacles.end();) {
-          bv.addCuboid(o->cuboid, 0.4, 0.9, 0.4);
+          /* bv.addCuboid(o->cuboid, 0.4, 0.9, 0.4); */
           if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - o->last_contact).count() > TIMEOUT) {
             ROS_INFO("[Timepix%u]: No longer tracking Obstacle%u. Reason: Timeout", model_->GetId(), o->id);
             obstacles.erase(o);
@@ -77,7 +77,7 @@ namespace gazebo
         obstacles_mutex.unlock();
 
         for (Source s : sources) {
-          bv.addPoint(s.relative_position);
+          /* bv.addPoint(s.relative_position); */
         }
 
         auto sim_start = std::chrono::high_resolution_clock::now();
@@ -92,7 +92,7 @@ namespace gazebo
         msg.data = captured_photons;
         medipix_pub.publish(msg);
 
-        bv.publish();
+        /* bv.publish(); */
       }
     }
 
@@ -162,7 +162,7 @@ namespace gazebo
 
     int    simulate(std::chrono::high_resolution_clock::time_point time_start);
     void   oneDebuggingRay();
-    double getObstacleAttenuation(Source s);  // percentage of particles which will get absorbed by obstacles
+    double obstacleAttenuation(Source s);  // percentage of particles which will get absorbed by obstacles
 
     BatchVisualizer bv;
 
@@ -196,6 +196,10 @@ namespace gazebo
 
   /* sourcesCallback() //{ */
   void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
+    if (msg->material() != "Cs137" && msg->material() != "Am241") {
+      ROS_WARN("Unrecognized source material '%s', cannot simulate", msg->material().c_str());
+      return;
+    }
 
     sources_mutex.lock();
     Eigen::Vector3d pos(msg->x(), msg->y(), msg->z());
@@ -278,8 +282,31 @@ namespace gazebo
     Eigen::Quaterniond relative_orientation(model_->WorldPose().Rot().W(), model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(),
                                             model_->WorldPose().Rot().Z());
 
-    Cuboid   c(relative_position, relative_orientation, depth, width, height);
-    Obstacle o(c, relative_position, relative_orientation, Si);
+    Cuboid      c(relative_position, relative_orientation, depth, width, height);
+    Material    obstacle_material;
+    std::string material_name = msg->material();
+    if (material_name == "Si") {
+      obstacle_material = Si;
+    } else if (material_name == "Cd") {
+      obstacle_material = Cd;
+    } else if (material_name == "Na") {
+      obstacle_material = Na;
+    } else if (material_name == "I") {
+      obstacle_material = I;
+    } else if (material_name == "Te") {
+      obstacle_material = Te;
+    } else if (material_name == "CdTe") {
+      obstacle_material = CdTe;
+    } else if (material_name == "concrete") {
+      obstacle_material = concrete;
+    } else if (material_name == "glass") {
+      obstacle_material = glass;
+    } else {
+      ROS_INFO("[RadiationObstacle]: material '%s' not recognized. Using parameters from obstacle model.sdf", material_name.c_str());
+      obstacle_material = Material(material_name, msg->density(), msg->mac60kev(), msg->mac600kev());
+    }
+
+    Obstacle o(c, relative_position, relative_orientation, obstacle_material);
     o.id           = msg->id();
     o.last_contact = std::chrono::high_resolution_clock::now();
 
@@ -334,16 +361,16 @@ namespace gazebo
 
     this->modelName = model_->GetName();
 
-    /* this->sensor_size      = 0.01408; */
-    /* this->sensor_thickness = 300e-06; */
-    this->sensor_size      = 0.2;
-    this->sensor_thickness = 0.05;
+    this->sensor_size      = 0.01408;
+    this->sensor_thickness = 300e-06;
+    /* this->sensor_size      = 0.2; */
+    /* this->sensor_thickness = 0.05; */
 
     this->diagonal_length = std::sqrt(2 * sensor_size * sensor_size + sensor_thickness * sensor_thickness);
     this->sensor_material = Si;
 
-    this->diagonal_absorption_prob_Cs137 = photoabsorptionProbability(diagonal_length, sensor_material.pmac_Cs137, sensor_material.density);
-    this->diagonal_absorption_prob_Am241 = photoabsorptionProbability(diagonal_length, sensor_material.pmac_Am241, sensor_material.density);
+    this->diagonal_absorption_prob_Am241 = photoabsorptionProbability(diagonal_length, sensor_material.mac60kev, sensor_material.density);
+    this->diagonal_absorption_prob_Cs137 = photoabsorptionProbability(diagonal_length, sensor_material.mac600kev, sensor_material.density);
 
     ROS_INFO("Probability of absorption on body diagonal: Cs137: %.4f, Am241: %.4f", diagonal_absorption_prob_Cs137, diagonal_absorption_prob_Am241);
 
@@ -359,7 +386,7 @@ namespace gazebo
       sides.push_back(Rectangle());
     }
 
-    bv = BatchVisualizer(*this->rosNode.get(), "/base_link");
+    /* bv = BatchVisualizer(*this->rosNode.get(), "/base_link"); */
 
     Eigen::Vector3d A(sensor_thickness / 2.0, -sensor_size / 2.0, -sensor_size / 2.0);
     Eigen::Vector3d B(sensor_thickness / 2.0, sensor_size / 2.0, -sensor_size / 2.0);
@@ -397,6 +424,7 @@ namespace gazebo
   }
   //}
 
+  /* simulate() //{ */
   int Timepix::simulate(std::chrono::high_resolution_clock::time_point time_start) {
     if (sources.size() < 1) {
       return 0;
@@ -412,23 +440,18 @@ namespace gazebo
         sources.erase(s);
         continue;
       }
-      auto   time1            = std::chrono::high_resolution_clock::now();
-      double count_multiplier = getObstacleAttenuation(*s);
-      auto   time2            = std::chrono::high_resolution_clock::now();
+      double count_multiplier = obstacleAttenuation(*s);
 
       /* std::cout << "Time used: " << std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count() << "\n"; */
       /* ROS_INFO("Count multiplier due to obstacles: %.3f", count_multiplier); */
 
-      /* VISUALIZE //{ */
+      // VISUALIZE
       /* bv.addPoint(s->relative_position); */
-      /* //} VISUALIZE */
-
 
       for (size_t i = 0; i < s->exposed_sides.size(); i++) {
 
-        /* VISUALIZE //{ */
+        // VISUALIZE
         /* bv.addRect(sides[s->exposed_sides[i]]); */
-        /* //} VISUALIZE */
 
         int samples;
         if (s->material == "Cs137") {
@@ -446,18 +469,14 @@ namespace gazebo
           photons_total++;
           long elapsed_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - time_start).count();
           if (elapsed_nanoseconds > SIMULATION_STEP * 1E9) {
-            /* ROS_INFO("Simulated particles: %d, Captured: %d, Time: %ld ns", photons_total, photons_captured, elapsed_nanoseconds); */
-            /* ROS_INFO("Simulation speed: %.3f particles per second", (photons_total * 1E9) / elapsed_nanoseconds); */
+            ROS_INFO("Simulated particles: %d, Captured: %d, Time: %.2f ms", photons_total, photons_captured, elapsed_nanoseconds / 1E6);
+            ROS_INFO("Simulation speed: %.3f particles per second", (photons_total * 1E9) / elapsed_nanoseconds);
             ROS_WARN("Forced interrupt");
             return photons_captured;
           }
           Eigen::Vector3d intersect1 = sampleSide(s->exposed_sides[i]);
 
           Ray r = Ray::twopointCast(s->relative_position, intersect1);
-
-          /* VISUALIZE //{ */
-          bv.addRay(r);
-          /* //} VISUALIZE */
 
           for (int j = 0; j < 6; j++) {
             if (j == s->exposed_sides[i]) {
@@ -469,17 +488,18 @@ namespace gazebo
               double track_length = (intersect2.get() - intersect1).norm();
               double pe_prob;
               if (s->material == "Cs137") {
-                pe_prob = photoabsorptionProbability(track_length, sensor_material.pmac_Cs137, sensor_material.density) / diagonal_absorption_prob_Cs137;
+                pe_prob = photoabsorptionProbability(track_length, sensor_material.mac600kev, sensor_material.density) / diagonal_absorption_prob_Cs137;
               } else if (s->material == "Am241") {
-                pe_prob = photoabsorptionProbability(track_length, sensor_material.pmac_Am241, sensor_material.density) / diagonal_absorption_prob_Am241;
+                pe_prob = photoabsorptionProbability(track_length, sensor_material.mac60kev, sensor_material.density) / diagonal_absorption_prob_Am241;
               }
               double coin_flip = rand_dbl(rand_gen);
               if (coin_flip < pe_prob) {
                 photons_captured++;
-                /* VISUALIZE //{ */
-                Ray track = Ray::twopointCast(intersect1, intersect2.get());
-                bv.addRay(track, 1.0, 0.5, 0.0);
-                /* //} VISUALIZE */
+
+                // VISUALIZE
+                /* Ray track = Ray::twopointCast(intersect1, intersect2.get()); */
+                /* bv.addRay(track, 1.0, 0.5, 0.0); */
+                /* bv.addRay(r); */
               }
               break;
             }
@@ -489,7 +509,7 @@ namespace gazebo
       s++;
     }
     long elapsed_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - time_start).count();
-    /* ROS_INFO("Simulated particles: %d, Captured: %d, Time: %ld ns", photons_total, photons_captured, elapsed_nanoseconds); */
+    ROS_INFO("Simulated particles: %d, Captured: %d, Time: %.2f ms", photons_total, photons_captured, elapsed_nanoseconds/1E6);
     /* ROS_INFO("Simulation speed: %.3f particles per second", (photons_total * 1E9) / elapsed_nanoseconds); */
 
     /* VISUALIZE //{ */
@@ -498,13 +518,17 @@ namespace gazebo
 
     return photons_captured;
   }
+  //}
 
+  /* photoabsorptionProbability //{*/
   double Timepix::photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density) {
-    return 1.0 - std::exp(-mass_att_coeff * material_thickness * 100 * material_density);
+    return 1.0 - std::exp(-mass_att_coeff * material_thickness * 100 * material_density);  // multiply by 100 to get thickness in cm
   }
+  //}
 
+  /* obstacleAttenuation //{ */
   // return percentage of particles which will survive their way through obstacles
-  double Timepix::getObstacleAttenuation(Source s) {
+  double Timepix::obstacleAttenuation(Source s) {
     obstacles_mutex.lock();
     Ray r = Ray::twopointCast(s.relative_position, Eigen::Vector3d(0.0, 0.0, 0.0));
     /* ROS_INFO("[Timepix]: Casting ray"); */
@@ -523,12 +547,15 @@ namespace gazebo
         ROS_INFO("Timepix: Obstacle track length: %.3f", track_length);
         Ray obstacle_track = Ray::twopointCast(intersections[1], intersections[0]);
         /* bv.addRay(obstacle_track, 1.0, 1.0, 0.3); */
-        /* ret *= (1 - photoabsorptionProbability(track_length, o.material.pmac_Am241, o.material.density)); */
-        //AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-        ret *= (1 - photoabsorptionProbability(0.2*track_length, o.material.pmac_Am241, o.material.density));
+        if (s.material == "Cs137") {
+          ret *= (1 - photoabsorptionProbability(track_length, o.material.mac600kev, o.material.density));
+        } else if (s.material == "Am241") {
+          ret *= (1 - photoabsorptionProbability(track_length, o.material.mac60kev, o.material.density));
+        }
       }
     }
     obstacles_mutex.unlock();
     return ret;
   }
+  //}
 }  // namespace gazebo
