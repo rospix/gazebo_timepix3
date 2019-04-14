@@ -14,8 +14,7 @@ class Source {
 public:
   Source();
   ~Source();
-  Source(unsigned int id, std::string material = "Am", double activity = 10e9, std::vector<double> apparent_activities = {0.0, 0.0, 0.0},
-         Eigen::Vector3d relative_position = Eigen::Vector3d(0.0, 0.0, 0.0));
+  Source(unsigned int id, std::string material = "Am241", double activity = 10e9, Eigen::Vector3d relative_position = Eigen::Vector3d(0.0, 0.0, 0.0));
   unsigned int        id = 1;
   std::string         material;
   double              activity;
