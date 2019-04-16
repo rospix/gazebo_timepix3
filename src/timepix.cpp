@@ -599,11 +599,16 @@ namespace gazebo
     int    obstacles_in_way     = 0;
     for (Obstacle o : obstacles) {
       std::vector<Eigen::Vector3d> intersections;
-      // TODO get intersection with all sides
       for (int i = 0; i < 6; i++) {
         boost::optional<Eigen::Vector3d> intersect = o.cuboid.sides[i].intersectionRay(r);
         if (intersect) {
-          intersections.push_back(*intersect);
+          if ((s.relative_position - *intersect).norm() < s.relative_position.norm()) {
+            /* ROS_INFO("Obstacle first"); */
+            intersections.push_back(*intersect);
+          } else {
+            /* ROS_INFO("Timepix first"); */
+            break;
+          }
         }
       }
       if (intersections.size() > 1) {
