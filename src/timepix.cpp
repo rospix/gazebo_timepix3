@@ -35,7 +35,7 @@
 
 #define TIMEOUT 1.5           // [s]
 #define SIMULATION_STEP 0.01  // [s]
-#define EXPOSITION_TIME 1.0   // [s]
+#define EXPOSITION_TIME 0.1   // [s]
 
 #define FRONT 0
 #define BACK 1
@@ -64,15 +64,9 @@ namespace gazebo
 
         auto step_start = std::chrono::high_resolution_clock::now();
 
-        // VISUALIZE
-        bv.clear();
-        bv.addCuboid(sensor_cuboid);
-
         obstacles_mutex.lock();
         for (auto o = obstacles.begin(); o != obstacles.end();) {
-          // VISUALIZE
-          bv.addCuboid(o->cuboid, 0.4, 0.9, 0.4);
-          if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - o->last_contact).count() > TIMEOUT) {
+          if (std::chrono::duration_cast<std::chrono::seconds>(step_start - o->last_contact).count() > TIMEOUT) {
             ROS_INFO("[Timepix%u]: No longer tracking Obstacle%u. Reason: Timeout", model_->GetId(), o->id);
             obstacles.erase(o);
             continue;
@@ -81,29 +75,42 @@ namespace gazebo
         }
         obstacles_mutex.unlock();
 
-        // VISUALIZE
-        for (Source s : sources) {
-          bv.addPoint(s.relative_position);
-        }
-
         auto sim_start = std::chrono::high_resolution_clock::now();
+
         sources_mutex.lock();
         std::pair<int, std::chrono::high_resolution_clock::time_point> sim_output = simulate(sim_start);
-
-        photon_readout += sim_output.first;
-        auto sim_end = sim_output.second;
-
         sources_mutex.unlock();
 
-        if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - last_readout).count() > EXPOSITION_TIME) {
+        photon_readout += sim_output.first;
+        auto time_now = sim_output.second;
+        if (std::chrono::duration_cast<std::chrono::seconds>(time_now - last_readout).count() > EXPOSITION_TIME) {
+
+          /* VISUALIZE */  //{
+          bv.clear();
+          bv.addCuboid(sensor_cuboid);
+          sources_mutex.lock();
+          for (Source s : sources) {
+            bv.addPoint(s.relative_position);
+          }
+          sources_mutex.unlock();
+          obstacles_mutex.lock();
+          for (Obstacle o : obstacles) {
+            bv.addCuboid(o.cuboid, 0.4, 0.9, 0.4);
+          }
+          obstacles_mutex.unlock();
+          /* VISUALIZE */  //}
+
           ROS_INFO("[Timepix%u]: Particle flux: %d per second", model_->GetId(), photon_readout);
           std_msgs::Int32 msg;
           msg.data = photon_readout;
           medipix_pub.publish(msg);
 
           photon_readout = 0;
-          last_readout   = sim_end;
+          last_readout   = time_now;
+
+          bv.publish();
         }
+
 
         auto   sim_ns      = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - sim_start).count();
         double sim_seconds = (double)(sim_ns / 1E9);
@@ -111,14 +118,6 @@ namespace gazebo
           std::this_thread::sleep_for(std::chrono::duration<double>(SIMULATION_STEP - sim_seconds));
         }
 
-        tf::Transform  transform;
-        tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
-        tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
-        transform.setOrigin(origin);
-        transform.setRotation(quat);
-        transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "local_origin", frame_name.str()));
-
-        bv.publish();
         /* auto   step_end    = std::chrono::high_resolution_clock::now(); */
         /* double duration_ms = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(step_end - step_start).count() / 1E6); */
         /* ROS_WARN("Step duration: %.2f ms", duration_ms); */
@@ -288,8 +287,6 @@ namespace gazebo
     for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
       // known obstacle -> update its params
       if (o->id == msg->id()) {
-        Eigen::Quaterniond sensor_ori(model_->WorldPose().Rot().W(), model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(),
-                                      model_->WorldPose().Rot().Z());
         Eigen::Vector3d    relative_position    = world2local * (obstacle_pos - pos3toVector3d(model_->WorldPose()));
         Eigen::Quaterniond relative_orientation = world2local * obstacle_ori;
 
@@ -405,7 +402,7 @@ namespace gazebo
     ss << "/" << std::getenv("UAV_NAME") << "/timepix/photon_count";
     medipix_pub = rosNode->advertise<std_msgs::Int32>(ss.str().c_str(), 100);
 
-    frame_name << "/fcu_" << std::getenv("UAV_NAME") << "/timepix_origin";
+    frame_name << std::getenv("UAV_NAME") << "/timepix_origin";
     bv = BatchVisualizer(*this->rosNode.get(), frame_name.str());
 
     for (int i = 0; i < 6; i++) {
@@ -447,10 +444,17 @@ namespace gazebo
 
   /* OnUpdate() //{ */
 
-  void Timepix::OnUpdate(const common::UpdateInfo &) {
+  void Timepix::OnUpdate(const common::UpdateInfo &upd) {
     ignition::math::Quaterniond q = model_->WorldPose().Rot();
     local2world                   = Eigen::Quaterniond(q.W(), q.X(), q.Y(), q.Z());
     world2local                   = local2world.inverse();
+
+    tf::Transform  transform;
+    tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
+    tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
+    transform.setOrigin(origin);
+    transform.setRotation(quat);
+    transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "local_origin", frame_name.str()));
   }
   //}
 
@@ -520,12 +524,12 @@ namespace gazebo
           auto   elapsed_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(time_now - time_start).count();
           double elapsed_ns          = (double)(elapsed_nanoseconds);
           if (elapsed_ns > SIMULATION_STEP * 1E9) {
-            double elapsed_ns        = (double)(elapsed_nanoseconds);
-            double theoretical_speed = (photons_total * 1E9) / elapsed_ns;
-            ROS_INFO("Simulated particles: %d/%d, Captured: %d, Time: %.3f ms", photons_total, required_photon_count, photons_captured,
-                     elapsed_nanoseconds / 1E6);
-            ROS_INFO("Theoretical speed: %.2f particles per second", theoretical_speed);
-            ROS_WARN("Forced interrupt");
+            /* double elapsed_ns        = (double)(elapsed_nanoseconds); */
+            /* double theoretical_speed = (photons_total * 1E9) / elapsed_ns; */
+            /* ROS_INFO("Simulated particles: %d/%d, Captured: %d, Time: %.3f ms", photons_total, required_photon_count, photons_captured, */
+            /*          elapsed_nanoseconds / 1E6); */
+            /* ROS_INFO("Theoretical speed: %.2f particles per second", theoretical_speed); */
+            /* ROS_WARN("Forced interrupt"); */
             ret.first  = photons_captured;
             ret.second = time_now;
             return ret;
@@ -566,12 +570,13 @@ namespace gazebo
       }
       s++;
     }
-    auto   time_now            = std::chrono::high_resolution_clock::now();
-    auto   elapsed_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(time_now - time_start).count();
-    double elapsed_ns          = (double)(elapsed_nanoseconds);
-    double theoretical_speed   = (photons_total * 1E9) / elapsed_ns;
-    ROS_INFO("Simulated particles: %d/%d, Captured: %d, Time: %.3f ms", photons_total, required_photon_count, photons_captured, elapsed_nanoseconds / 1E6);
-    ROS_INFO("Theoretical speed: %.2f particles per second", theoretical_speed);
+    auto time_now = std::chrono::high_resolution_clock::now();
+    /* auto   elapsed_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(time_now - time_start).count(); */
+    /* double elapsed_ns          = (double)(elapsed_nanoseconds); */
+    /* double theoretical_speed   = (photons_total * 1E9) / elapsed_ns; */
+    /* ROS_INFO("Simulated particles: %d/%d, Captured: %d, Time: %.3f ms", photons_total, required_photon_count, photons_captured, elapsed_nanoseconds / 1E6);
+     */
+    /* ROS_INFO("Theoretical speed: %.2f particles per second", theoretical_speed); */
 
     /* VISUALIZE //{ */
     /* bv.publish(); */
