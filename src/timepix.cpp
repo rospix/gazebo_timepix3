@@ -20,6 +20,7 @@
 
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
 #include <gazebo_rad_msgs/RadiationObstacle.pb.h>
+#include <gazebo_rad_msgs/Timepix.h>
 
 #include <geometry_visual_utils/visual_utils.h>
 
@@ -101,9 +102,16 @@ namespace gazebo
           /* VISUALIZE */  //}
 
           ROS_INFO("[Timepix%u]: Particle flux: %d per second", model_->GetId(), photon_readout);
-          std_msgs::Int32 msg;
-          msg.data = photon_readout;
-          medipix_pub.publish(msg);
+
+          gazebo_rad_msgs::Timepix msg;
+          msg.stamp = ros::Time::now();
+          msg.size.x = this->sensor_thickness;
+          msg.size.y = this->sensor_size;
+          msg.size.z = this->sensor_size;
+          msg.count = photon_readout;
+          msg.exposure = EXPOSITION_TIME;
+          msg.id = this->model_->GetId();
+          timepix_pub.publish(msg);
 
           photon_readout = 0;
           last_readout   = time_now;
@@ -184,7 +192,7 @@ namespace gazebo
 
     std::stringstream frame_name;
 
-    ros::Publisher medipix_pub;
+    ros::Publisher timepix_pub;
 
     gazebo_rad_msgs::msgs::RadiationSource radiation_msg;
 
@@ -400,7 +408,7 @@ namespace gazebo
 
     std::stringstream ss;
     ss << "/" << std::getenv("UAV_NAME") << "/timepix/photon_count";
-    medipix_pub = rosNode->advertise<std_msgs::Int32>(ss.str().c_str(), 100);
+    timepix_pub = rosNode->advertise<gazebo_rad_msgs::Timepix>(ss.str().c_str(), 100);
 
     frame_name << std::getenv("UAV_NAME") << "/timepix_origin";
     bv = BatchVisualizer(*this->rosNode.get(), frame_name.str());
