@@ -405,12 +405,11 @@ namespace gazebo
 
     ROS_INFO("Probability of absorption on body diagonal: Cs137: %.4f, Am241: %.4f", diagonal_absorption_prob_Cs137, diagonal_absorption_prob_Am241);
 
-
     std::stringstream ss;
-    ss << "/" << std::getenv("UAV_NAME") << "/timepix/photon_count";
+    ss << "/" << model_->GetName().c_str() << "/timepix/photon_count";
     timepix_pub = rosNode->advertise<gazebo_rad_msgs::Timepix>(ss.str().c_str(), 100);
 
-    frame_name << std::getenv("UAV_NAME") << "/timepix_origin";
+    frame_name << model_->GetName().c_str() << "/timepix_origin";
     bv = BatchVisualizer(*this->rosNode.get(), frame_name.str());
 
     for (int i = 0; i < 6; i++) {
