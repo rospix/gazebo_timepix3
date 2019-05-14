@@ -22,7 +22,7 @@
 #include <gazebo_rad_msgs/RadiationObstacle.pb.h>
 #include <gazebo_rad_msgs/Timepix.h>
 
-#include <geometry_visual_utils/visual_utils.h>
+/* #include <geometry_visual_utils/visual_utils.h> */
 
 #include <radiation_utils.h>
 #include <materials.h>
@@ -36,7 +36,7 @@
 
 #define TIMEOUT 1.5           // [s]
 #define SIMULATION_STEP 0.01  // [s]
-#define EXPOSITION_TIME 0.1   // [s]
+#define EXPOSITION_TIME 0.05   // [s]
 
 #define FRONT 0
 #define BACK 1
@@ -87,18 +87,18 @@ namespace gazebo
         if (std::chrono::duration_cast<std::chrono::seconds>(time_now - last_readout).count() > EXPOSITION_TIME) {
 
           /* VISUALIZE */  //{
-          bv.clear();
-          bv.addCuboid(sensor_cuboid);
-          sources_mutex.lock();
-          for (Source s : sources) {
-            bv.addPoint(s.relative_position);
-          }
-          sources_mutex.unlock();
-          obstacles_mutex.lock();
-          for (Obstacle o : obstacles) {
-            bv.addCuboid(o.cuboid, 0.4, 0.9, 0.4);
-          }
-          obstacles_mutex.unlock();
+          /* bv.clear(); */
+          /* bv.addCuboid(sensor_cuboid); */
+          /* sources_mutex.lock(); */
+          /* for (Source s : sources) { */
+            /* bv.addPoint(s.relative_position); */
+          /* } */
+          /* sources_mutex.unlock(); */
+          /* obstacles_mutex.lock(); */
+          /* for (Obstacle o : obstacles) { */
+          /*   bv.addCuboid(o.cuboid, 0.4, 0.9, 0.4); */
+          /* } */
+          /* obstacles_mutex.unlock(); */
           /* VISUALIZE */  //}
 
           ROS_INFO("[Timepix%u]: Particle flux: %d per second", model_->GetId(), photon_readout);
@@ -116,7 +116,7 @@ namespace gazebo
           photon_readout = 0;
           last_readout   = time_now;
 
-          bv.publish();
+          /* bv.publish(); */
         }
 
 
@@ -208,7 +208,7 @@ namespace gazebo
     void   oneDebuggingRay();
     double obstacleAttenuation(Source s);  // percentage of particles which will get absorbed by obstacles
 
-    BatchVisualizer          bv;
+    /* BatchVisualizer          bv; */
     tf::TransformBroadcaster transform_broadcaster;
 
     Cuboid sensor_cuboid;
@@ -410,7 +410,7 @@ namespace gazebo
     timepix_pub = rosNode->advertise<gazebo_rad_msgs::Timepix>(ss.str().c_str(), 100);
 
     frame_name << model_->GetName().c_str() << "/timepix_origin";
-    bv = BatchVisualizer(*this->rosNode.get(), frame_name.str());
+    /* bv = BatchVisualizer(*this->rosNode.get(), frame_name.str()); */
 
     for (int i = 0; i < 6; i++) {
       sides.push_back(Rectangle());
@@ -567,7 +567,7 @@ namespace gazebo
                 /* Ray track = Ray::twopointCast(intersect1, intersect2.get()); */
                 /* bv.addRay(track, 1.0, 0.5, 0.0); */
                 /* if (photons_captured < 5) { */
-                bv.addRay(r);
+                /* bv.addRay(r); */
                 /* } */
               }
               break;
