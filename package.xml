@@ -4,6 +4,7 @@
   <version>0.0.0</version>
   <description>Timepix simulation for Gazebo</description>
   <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>
+  <maintainer email="stibipet@fel.cvut.cz">Petr Stibinger</maintainer>
 
   <license>TODO</license>
 

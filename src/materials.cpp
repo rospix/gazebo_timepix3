@@ -10,6 +10,6 @@ Material::Material(std::string name, double density, double mac60kev, double mac
 
   this->name      = name;
   this->density   = density;
-  this->mac60kev  = mac60kev;
-  this->mac600kev = mac600kev;
+  this->mac60kev  = mac60kev; // mass attenuation coeff for Am241 photons
+  this->mac600kev = mac600kev; // mass attenuation coeff for Cs137 photons
 };

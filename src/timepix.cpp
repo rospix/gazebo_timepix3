@@ -22,8 +22,6 @@
 #include <gazebo_rad_msgs/RadiationObstacle.pb.h>
 #include <gazebo_rad_msgs/Timepix.h>
 
-/* #include <geometry_visual_utils/visual_utils.h> */
-
 #include <radiation_utils.h>
 #include <materials.h>
 
@@ -34,16 +32,23 @@
 
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
 
-#define TIMEOUT 1.5           // [s]
-#define SIMULATION_STEP 0.01  // [s]
-#define EXPOSITION_TIME 0.05   // [s]
+#define TIMEOUT 1.5           // [s] - stop listening to a source/obstacle after this time
+#define SIMULATION_STEP 0.01  // [s] - length of one simulation step
+#define EXPOSITION_TIME 0.1   // [s] - larger values increase number of simulated photons and decrease publishing rate
 
+// define indices for sides of the detector
 #define FRONT 0
 #define BACK 1
 #define LEFT 2
 #define RIGHT 3
 #define BOTTOM 4
 #define TOP 5
+
+/*
+ * This package provides the implementation of a model of the Timepix detector
+ *
+  */
+
 
 namespace gazebo
 {
@@ -86,49 +91,27 @@ namespace gazebo
         auto time_now = sim_output.second;
         if (std::chrono::duration_cast<std::chrono::seconds>(time_now - last_readout).count() > EXPOSITION_TIME) {
 
-          /* VISUALIZE */  //{
-          /* bv.clear(); */
-          /* bv.addCuboid(sensor_cuboid); */
-          /* sources_mutex.lock(); */
-          /* for (Source s : sources) { */
-            /* bv.addPoint(s.relative_position); */
-          /* } */
-          /* sources_mutex.unlock(); */
-          /* obstacles_mutex.lock(); */
-          /* for (Obstacle o : obstacles) { */
-          /*   bv.addCuboid(o.cuboid, 0.4, 0.9, 0.4); */
-          /* } */
-          /* obstacles_mutex.unlock(); */
-          /* VISUALIZE */  //}
-
           ROS_INFO("[Timepix%u]: Particle flux: %d per second", model_->GetId(), photon_readout);
 
           gazebo_rad_msgs::Timepix msg;
-          msg.stamp = ros::Time::now();
-          msg.size.x = this->sensor_thickness;
-          msg.size.y = this->sensor_size;
-          msg.size.z = this->sensor_size;
-          msg.count = photon_readout;
+          msg.stamp    = ros::Time::now();
+          msg.size.x   = this->sensor_thickness;
+          msg.size.y   = this->sensor_size;
+          msg.size.z   = this->sensor_size;
+          msg.count    = photon_readout;
           msg.exposure = EXPOSITION_TIME;
-          msg.id = this->model_->GetId();
+          msg.id       = this->model_->GetId();
           timepix_pub.publish(msg);
 
           photon_readout = 0;
           last_readout   = time_now;
-
-          /* bv.publish(); */
         }
-
 
         auto   sim_ns      = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - sim_start).count();
         double sim_seconds = (double)(sim_ns / 1E9);
         if (sim_seconds < SIMULATION_STEP) {
           std::this_thread::sleep_for(std::chrono::duration<double>(SIMULATION_STEP - sim_seconds));
         }
-
-        /* auto   step_end    = std::chrono::high_resolution_clock::now(); */
-        /* double duration_ms = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(step_end - step_start).count() / 1E6); */
-        /* ROS_WARN("Step duration: %.2f ms", duration_ms); */
       }
     }
 
@@ -201,14 +184,12 @@ namespace gazebo
 
     std::string modelName;
 
-
     std::pair<int, std::chrono::high_resolution_clock::time_point> simulate(std::chrono::high_resolution_clock::time_point time_start);
 
 
     void   oneDebuggingRay();
     double obstacleAttenuation(Source s);  // percentage of particles which will get absorbed by obstacles
 
-    /* BatchVisualizer          bv; */
     tf::TransformBroadcaster transform_broadcaster;
 
     Cuboid sensor_cuboid;
@@ -394,11 +375,13 @@ namespace gazebo
 
     this->sensor_size      = 0.01408;
     this->sensor_thickness = 300e-06;
+    /* this->sensor_thickness = 1e-03; */
     /* this->sensor_size      = 0.2; */
     /* this->sensor_thickness = 0.05; */
 
     this->diagonal_length = std::sqrt(2 * sensor_size * sensor_size + sensor_thickness * sensor_thickness);
     this->sensor_material = Si;
+    /* this->sensor_material = CdTe; */
 
     this->diagonal_absorption_prob_Am241 = photoabsorptionProbability(diagonal_length, sensor_material.mac60kev, sensor_material.density);
     this->diagonal_absorption_prob_Cs137 = photoabsorptionProbability(diagonal_length, sensor_material.mac600kev, sensor_material.density);
@@ -410,7 +393,6 @@ namespace gazebo
     timepix_pub = rosNode->advertise<gazebo_rad_msgs::Timepix>(ss.str().c_str(), 100);
 
     frame_name << model_->GetName().c_str() << "/timepix_origin";
-    /* bv = BatchVisualizer(*this->rosNode.get(), frame_name.str()); */
 
     for (int i = 0; i < 6; i++) {
       sides.push_back(Rectangle());
@@ -462,6 +444,7 @@ namespace gazebo
     transform.setOrigin(origin);
     transform.setRotation(quat);
     transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "local_origin", frame_name.str()));
+
   }
   //}
 
@@ -478,7 +461,6 @@ namespace gazebo
     int photons_captured = 0;
     int photons_total    = 0;
 
-    /* auto time1 = std::chrono::high_resolution_clock::now(); */
     for (auto s = sources.begin(); s != sources.end();) {
       // Remove inactive sources
       if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - s->last_contact).count() > TIMEOUT) {
@@ -486,26 +468,10 @@ namespace gazebo
         sources.erase(s);
         continue;
       }
-      /* auto time2 = std::chrono::high_resolution_clock::now(); */
-      /* ROS_INFO_STREAM("Removing inactive sources: " << std::chrono::duration_cast<std::chrono::nanoseconds>(time2 - time1).count() << " ns\n"); */
 
       double count_multiplier = obstacleAttenuation(*s);
 
-      /* auto time3 = std::chrono::high_resolution_clock::now(); */
-      /* ROS_INFO_STREAM("Calculating obstacle attenuation: " << std::chrono::duration_cast<std::chrono::nanoseconds>(time3 - time2).count() << " ns\n"); */
-
-      /* std::cout << "Time used: " << std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count() << "\n"; */
-      /* ROS_INFO("Count multiplier due to obstacles: %.3f", count_multiplier); */
-
-      // VISUALIZE
-      /* bv.addPoint(s->relative_position); */
-
       for (size_t i = 0; i < s->exposed_sides.size(); i++) {
-
-        // VISUALIZE
-        /* bv.addRect(sides[s->exposed_sides[i]]); */
-
-        /* auto time4   = std::chrono::high_resolution_clock::now(); */
         int samples = 0;
         if (s->material == "Cs137") {
           samples = s->apparent_activities[i] * SIMULATION_STEP * diagonal_absorption_prob_Cs137;
@@ -516,27 +482,16 @@ namespace gazebo
           ret.second = std::chrono::high_resolution_clock::now();
           return ret;
         }
-        /* auto time5 = std::chrono::high_resolution_clock::now(); */
-        /* ROS_INFO_STREAM("Getting sample count: " << std::chrono::duration_cast<std::chrono::nanoseconds>(time5 - time4).count() << " ns\n"); */
-
 
         samples = samples * count_multiplier;
         required_photon_count += samples;
 
-
-        /* ROS_INFO("Generating %d samples for side %d", samples, s->exposed_sides[i]); */
         for (int n = 0; n < samples; n++) {
           photons_total++;
           auto   time_now            = std::chrono::high_resolution_clock::now();
           auto   elapsed_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(time_now - time_start).count();
           double elapsed_ns          = (double)(elapsed_nanoseconds);
           if (elapsed_ns > SIMULATION_STEP * 1E9) {
-            /* double elapsed_ns        = (double)(elapsed_nanoseconds); */
-            /* double theoretical_speed = (photons_total * 1E9) / elapsed_ns; */
-            /* ROS_INFO("Simulated particles: %d/%d, Captured: %d, Time: %.3f ms", photons_total, required_photon_count, photons_captured, */
-            /*          elapsed_nanoseconds / 1E6); */
-            /* ROS_INFO("Theoretical speed: %.2f particles per second", theoretical_speed); */
-            /* ROS_WARN("Forced interrupt"); */
             ret.first  = photons_captured;
             ret.second = time_now;
             return ret;
@@ -562,13 +517,6 @@ namespace gazebo
               double coin_flip = rand_dbl(rand_gen);
               if (coin_flip < pe_prob) {
                 photons_captured++;
-
-                // VISUALIZE
-                /* Ray track = Ray::twopointCast(intersect1, intersect2.get()); */
-                /* bv.addRay(track, 1.0, 0.5, 0.0); */
-                /* if (photons_captured < 5) { */
-                /* bv.addRay(r); */
-                /* } */
               }
               break;
             }
@@ -578,18 +526,8 @@ namespace gazebo
       s++;
     }
     auto time_now = std::chrono::high_resolution_clock::now();
-    /* auto   elapsed_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(time_now - time_start).count(); */
-    /* double elapsed_ns          = (double)(elapsed_nanoseconds); */
-    /* double theoretical_speed   = (photons_total * 1E9) / elapsed_ns; */
-    /* ROS_INFO("Simulated particles: %d/%d, Captured: %d, Time: %.3f ms", photons_total, required_photon_count, photons_captured, elapsed_nanoseconds / 1E6);
-     */
-    /* ROS_INFO("Theoretical speed: %.2f particles per second", theoretical_speed); */
-
-    /* VISUALIZE //{ */
-    /* bv.publish(); */
-    /* //} VISUALIZE */
-    ret.first  = photons_captured;
-    ret.second = time_now;
+    ret.first     = photons_captured;
+    ret.second    = time_now;
     return ret;
   }
   //}
@@ -604,8 +542,7 @@ namespace gazebo
   // return percentage of particles which will survive their way through obstacles and air
   double Timepix::obstacleAttenuation(Source s) {
     obstacles_mutex.lock();
-    Ray r = Ray::twopointCast(s.relative_position, Eigen::Vector3d(0.0, 0.0, 0.0));
-    /* ROS_INFO("[Timepix]: Casting ray"); */
+    Ray    r                    = Ray::twopointCast(s.relative_position, Eigen::Vector3d(0.0, 0.0, 0.0));
     double ret                  = 1.0;
     double total_obstacle_track = 0.0;
     int    obstacles_in_way     = 0;
@@ -615,10 +552,8 @@ namespace gazebo
         boost::optional<Eigen::Vector3d> intersect = o.cuboid.sides[i].intersectionRay(r);
         if (intersect) {
           if ((s.relative_position - *intersect).norm() < s.relative_position.norm()) {
-            /* ROS_INFO("Obstacle first"); */
             intersections.push_back(*intersect);
           } else {
-            /* ROS_INFO("Timepix first"); */
             break;
           }
         }
@@ -626,7 +561,6 @@ namespace gazebo
       if (intersections.size() > 1) {
         double track_length   = (intersections[1] - intersections[0]).norm();
         Ray    obstacle_track = Ray::twopointCast(intersections[1], intersections[0]);
-        /* bv.addRay(obstacle_track, 1.0, 1.0, 0.3); */
         if (s.material == "Cs137") {
           ret *= (1 - photoabsorptionProbability(track_length, o.material.mac600kev, o.material.density));
         } else if (s.material == "Am241") {
@@ -634,7 +568,6 @@ namespace gazebo
         }
         obstacles_in_way++;
         total_obstacle_track += track_length;
-        /* ROS_INFO("Timepix: Obstacle track length: %.3f", track_length); */
       }
     }
     if (s.material == "Cs137") {
@@ -642,8 +575,6 @@ namespace gazebo
     } else if (s.material == "Am241") {
       ret *= (1 - photoabsorptionProbability(s.relative_position.norm() - total_obstacle_track, air.mac600kev, air.density));
     }
-    /* ROS_INFO("[Timepix%u]: Obstacles in way: %d, Total obstacle track: %.2f, Environ particle loss: %.2f", model_->GetId(), obstacles_in_way, */
-    /*          total_obstacle_track, (1 - ret)); */
     obstacles_mutex.unlock();
     return ret;
   }

@@ -10,6 +10,11 @@
 #include <ros/time.h>
 #include <materials.h>
 
+/*
+ * This library provides wrapper objects for the 3D objects interacting with the simulated radiation
+ *
+  */
+
 class Source {
 public:
   Source();
