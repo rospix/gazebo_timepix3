@@ -15,6 +15,7 @@
 
 #include <std_msgs/Float64.h>
 #include <std_msgs/Int32.h>
+#include <std_msgs/Empty.h>
 
 #include <mutex>
 
@@ -29,6 +30,8 @@
 
 #include <chrono>
 #include <time.h>
+
+#include <geometry_visual_utils/visual_utils.h>
 
 #define UP Eigen::Vector3d(0.0, 0.0, 1.0)  // unit vector pointing up
 
@@ -47,7 +50,7 @@
 /*
  * This package provides the implementation of a model of the Timepix detector
  *
-  */
+ */
 
 
 namespace gazebo
@@ -175,7 +178,8 @@ namespace gazebo
 
     std::stringstream frame_name;
 
-    ros::Publisher timepix_pub;
+    ros::Publisher  timepix_pub;
+    ros::Subscriber visualizer_sub;
 
     gazebo_rad_msgs::msgs::RadiationSource radiation_msg;
 
@@ -183,6 +187,8 @@ namespace gazebo
     common::Time last_time_;
 
     std::string modelName;
+
+    BatchVisualizer bv;
 
     std::pair<int, std::chrono::high_resolution_clock::time_point> simulate(std::chrono::high_resolution_clock::time_point time_start);
 
@@ -193,6 +199,8 @@ namespace gazebo
     tf::TransformBroadcaster transform_broadcaster;
 
     Cuboid sensor_cuboid;
+    void   visualizerCallback(const std_msgs::EmptyConstPtr &msg);
+    void   drawObstacles();
   };
 
   GZ_REGISTER_MODEL_PLUGIN(Timepix)
@@ -324,6 +332,13 @@ namespace gazebo
     obstacles.push_back(o);
     obstacles_mutex.unlock();
     ROS_INFO("[Timepix%u]: Obstacle%u recognized", model_->GetId(), msg->id());
+    drawObstacles();
+  }
+  //}
+
+  /* visualizerCallback */  //{
+  void Timepix::visualizerCallback(const std_msgs::EmptyConstPtr &msg) {
+    drawObstacles();
   }
   //}
 
@@ -392,7 +407,10 @@ namespace gazebo
     ss << "/" << model_->GetName().c_str() << "/timepix/photon_count";
     timepix_pub = rosNode->advertise<gazebo_rad_msgs::Timepix>(ss.str().c_str(), 100);
 
+    visualizer_sub = rosNode->subscribe("/radiation_visualizer/visualize", 1, &Timepix::visualizerCallback, this);
+
     frame_name << model_->GetName().c_str() << "/timepix_origin";
+    bv = BatchVisualizer(*this->rosNode.get(), frame_name.str());
 
     for (int i = 0; i < 6; i++) {
       sides.push_back(Rectangle());
@@ -444,7 +462,6 @@ namespace gazebo
     transform.setOrigin(origin);
     transform.setRotation(quat);
     transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "local_origin", frame_name.str()));
-
   }
   //}
 
@@ -529,6 +546,16 @@ namespace gazebo
     ret.first     = photons_captured;
     ret.second    = time_now;
     return ret;
+  }
+  //}
+
+  /* drawObstacles */  //{
+  void Timepix::drawObstacles() {
+    bv.clear();
+    for (Obstacle o : obstacles) {
+      bv.addCuboid(o.cuboid, 0, 0.396, 0.741, 0.04);
+    }
+    bv.publish();
   }
   //}
 
