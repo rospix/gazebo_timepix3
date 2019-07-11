@@ -3,58 +3,54 @@ project(gazebo_timepix)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color")
 
-include(GNUInstallDirs)
-
-find_package(catkin REQUIRED COMPONENTS
+find_package(catkin REQUIRED
   roscpp
+  roslib
+  std_msgs
   gazebo_ros
-  image_transport
-  camera_info_manager
-  cv_bridge
-  rostest
   gazebo_rad_msgs
-  geometry_visual_utils
-  )
+)
 
 # include Eigen3
 find_package(Eigen3 REQUIRED)
 set(Eigen_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
 set(Eigen_LIBRARIES ${Eigen_LIBRARIES})
 
-# find_package(Boost REQUIRED COMPONENTS thread)
 find_package(gazebo REQUIRED)
-find_package(Threads REQUIRED)
-#find_package(sitl_gazebo REQUIRED)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GAZEBO_CXX_FLAGS}")
+# include Python
+find_package(PythonLibs REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-  DEPENDS Eigen roscpp gazebo_ros gazebo_rad_msgs geometry_visual_utils
-  )
+  DEPENDS gazebo_ros roslib gazebo_rad_msgs
+  CATKIN_DEPENDS roscpp std_msgs 
+)
+
+set(CMAKE_CXX_FLAGS "-std=c++11")
 
 include_directories(
   include
-  ${CMAKE_CURRENT_BINARY_DIR}
   ${catkin_INCLUDE_DIRS}
   ${GAZEBO_INCLUDE_DIRS}
-  ${Eigen_INCLUDE_DIRS}
-  # ${Boost_INCLUDE_DIR}
-  )
-
-link_directories(${GAZEBO_LIBRARY_DIRS})
+  ${PYTHON_INCLUDE_DIRS}
+)
 
 add_library(
+  ${PROJECT_NAME} SHARED
+  src/${PROJECT_NAME}.cpp
+  src/python_wrappers.cpp
+  )
+
+target_link_libraries(
   ${PROJECT_NAME}
-  src/timepix.cpp
-  src/radiation_utils.cpp
-  src/materials.cpp
-  )
-
-target_link_libraries(${PROJECT_NAME}
-  ${catkin_LIBRARIES}
   ${GAZEBO_LIBRARIES}
-  ${Eigen_LIBRARIES}
+  ${catkin_LIBRARIES}
+  ${PYTHON_LIBRARIES}
   )
 
-add_dependencies(${PROJECT_NAME} ${catkin_EXPORTED_TARGETS})
+add_dependencies(
+  ${PROJECT_NAME}
+  ${${PROJECT_NAME}_EXPORTED_TARGETS} 
+  ${catkin_EXPORTED_TARGETS}
+  )
