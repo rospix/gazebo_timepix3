@@ -5,9 +5,13 @@
 #include <ros/package.h>
 #include <gazebo/gazebo.hh>
 #include <gazebo/physics/physics.hh>
+
 #include <gazebo_rad_msgs/Timepix.h>
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
 #include <gazebo_rad_msgs/RadiationObstacle.pb.h>
+
+#include <gazebo_timepix/source.h>
+#include <gazebo_timepix/obstacle.h>
 
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource>   RadiationSourceConstPtr;
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationObstacle> RadiationObstacleConstPtr;
@@ -23,13 +27,21 @@ public:
 
 protected:
   virtual void Load(physics::ModelPtr _model, sdf::ElementPtr _sdf);
-  virtual void OnUpdate(const common::UpdateInfo &);
+  virtual void LateUpdate();
 
 private:
+  bool terminated;
+  boost::thread simulation_thread;
+
   physics::ModelPtr                model_;
   physics::WorldPtr                world_;
   event::ConnectionPtr             updateConnection_;
   std::unique_ptr<ros::NodeHandle> rosNode;
+
+  std::vector<Source> sources;
+  std::vector<Obstacle> Obstacles;
+
+  double exposition_time;
 
   ros::Publisher timepix_pub;
 };

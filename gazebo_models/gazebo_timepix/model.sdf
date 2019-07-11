@@ -1,8 +1,8 @@
 <?xml version="1.0" ?>
 <sdf version="1.5">
   <model name="gazebo_timepix">
-	  <static>1</static>
-	  <link name="link">
+    <static>1</static>
+    <link name="link">
       <pose>0 0 0.1 0 0 0</pose>
 
       <visual name="visual">
@@ -15,7 +15,9 @@
 
     </link>
 
-    <plugin name="gazebo_timepix" filename="libgazebo_timepix.so"/>
+    <plugin name="gazebo_timepix" filename="libgazebo_timepix.so">
+      <exposition_time>0.1</exposition_time> <!-- [s] -->
+    </plugin>
 
   </model>
 </sdf>
