@@ -27,8 +27,6 @@ catkin_package(
   CATKIN_DEPENDS roscpp std_msgs 
 )
 
-set(CMAKE_CXX_FLAGS "-std=c++11")
-
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}

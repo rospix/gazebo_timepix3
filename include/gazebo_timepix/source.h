@@ -19,13 +19,12 @@ public:
   std::vector<double> getApparentActivities();
   std::vector<int>    getExposedSides();
   Eigen::Vector3d     getRelativePosition();
-
-  std::chrono::high_resolution_clock::time_point getLastContact();
+  Eigen::Vector3d     getWorldPosition();
 
   void setApparentActivities(std::vector<double> apparent_activities);
   void setExposedSides(std::vector<int> exposed_sides);
-  void setRelativePosition(Eigen::Vector3d relative_position);
-  void setLastContact(std::chrono::high_resolution_clock::time_point last_contact);
+  void setWorldPosition(Eigen::Vector3d world_position);
+  void updateRelativePosition(Eigen::Vector3d detector_position);
 
 private:
   unsigned int gazebo_id;
@@ -34,19 +33,18 @@ private:
 
   std::vector<double> apparent_activities;
   std::vector<int>    exposed_sides;
-  Eigen::Vector3d     relative_position;
-
-  std::chrono::high_resolution_clock::time_point last_contact;
+  Eigen::Vector3d     world_position;
+  Eigen::Vector3d     relative_position = Eigen::Vector3d::Zero();
 };
 
 Source::~Source() {
 }
 
-Source::Source(unsigned int gazebo_id, std::string material, double activity, Eigen::Vector3d relative_position) {
-  this->gazebo_id         = gazebo_id;
-  this->material          = material;
-  this->activity          = activity;
-  this->relative_position = relative_position;
+Source::Source(unsigned int gazebo_id, std::string material, double activity, Eigen::Vector3d world_position) {
+  this->gazebo_id      = gazebo_id;
+  this->material       = material;
+  this->activity       = activity;
+  this->world_position = world_position;
 }
 
 unsigned int Source::getId() {
@@ -73,8 +71,8 @@ Eigen::Vector3d Source::getRelativePosition() {
   return relative_position;
 }
 
-std::chrono::high_resolution_clock::time_point Source::getLastContact() {
-  return last_contact;
+Eigen::Vector3d Source::getWorldPosition() {
+  return world_position;
 }
 
 void Source::setApparentActivities(std::vector<double> apparent_activities) {
@@ -85,12 +83,12 @@ void Source::setExposedSides(std::vector<int> exposed_sides) {
   this->exposed_sides = exposed_sides;
 }
 
-void Source::setRelativePosition(Eigen::Vector3d relative_position) {
-  this->relative_position = relative_position;
+void Source::setWorldPosition(Eigen::Vector3d world_position) {
+  this->world_position = world_position;
 }
 
-void Source::setLastContact(std::chrono::high_resolution_clock::time_point last_contact) {
-  this->last_contact = last_contact;
+void Source::updateRelativePosition(Eigen::Vector3d detector_position) {
+  relative_position = world_position - detector_position;
 }
 
 #endif /* RADIATION_UTILS_SOURCE_H */

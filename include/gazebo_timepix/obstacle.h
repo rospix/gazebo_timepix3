@@ -11,32 +11,36 @@
 class Obstacle {
 public:
   ~Obstacle();
-  Obstacle(unsigned int gazebo_id, std::string material, gazebo::physics::ModelPtr collider_);
+  Obstacle(unsigned int gazebo_id, std::string material, Eigen::Vector3d world_position, Eigen::Quaterniond orientation, Eigen::Vector3d scale);
 
-  unsigned int              getId();
-  std::string               getMaterial();
-  gazebo::physics::ModelPtr getCollider();
-
-  std::chrono::high_resolution_clock::time_point getLastContact();
-
-  void setLastContact(std::chrono::high_resolution_clock::time_point last_contact);
-
+  unsigned int       getId();
+  std::string        getMaterial();
+  Eigen::Vector3d    getWorldPosition();
+  Eigen::Vector3d    getRelativePosition();
+  Eigen::Quaterniond getOrientation();
+  Eigen::Vector3d    getScale();
+  void               updateRelativePosition(Eigen::Vector3d detector_position);
+  void               setWorldPosition(Eigen::Vector3d world_position);
+  void               setOrientation(Eigen::Quaterniond world_position);
 
 private:
-  unsigned int              gazebo_id = 1;
-  std::string               material;
-  gazebo::physics::ModelPtr collider_;
-
-  std::chrono::high_resolution_clock::time_point last_contact;
+  unsigned int       gazebo_id = 1;
+  std::string        material;
+  Eigen::Vector3d    relative_position = Eigen::Vector3d::Zero();
+  Eigen::Vector3d    world_position;
+  Eigen::Quaterniond orientation;
+  Eigen::Vector3d    scale;
 };
 
 Obstacle::~Obstacle() {
 }
 
-Obstacle::Obstacle(unsigned int gazebo_id, std::string material, gazebo::physics::ModelPtr collider_) {
-  this->gazebo_id = gazebo_id;
-  this->material  = material;
-  this->collider_ = collider_;
+Obstacle::Obstacle(unsigned int gazebo_id, std::string material, Eigen::Vector3d world_position, Eigen::Quaterniond orientation, Eigen::Vector3d scale) {
+  this->gazebo_id      = gazebo_id;
+  this->material       = material;
+  this->world_position = world_position;
+  this->orientation    = orientation;
+  this->scale          = scale;
 }
 
 unsigned int Obstacle::getId() {
@@ -47,16 +51,32 @@ std::string Obstacle::getMaterial() {
   return material;
 }
 
-gazebo::physics::ModelPtr Obstacle::getCollider() {
-  return collider_;
+Eigen::Vector3d Obstacle::getWorldPosition() {
+  return world_position;
 }
 
-std::chrono::high_resolution_clock::time_point Obstacle::getLastContact() {
-  return last_contact;
+Eigen::Vector3d Obstacle::getRelativePosition() {
+  return relative_position;
 }
 
-void Obstacle::setLastContact(std::chrono::high_resolution_clock::time_point last_contact) {
-  this->last_contact = last_contact;
+Eigen::Quaterniond Obstacle::getOrientation() {
+  return orientation;
+}
+
+Eigen::Vector3d Obstacle::getScale() {
+  return scale;
+}
+
+void Obstacle::setWorldPosition(Eigen::Vector3d world_position) {
+  this->world_position = world_position;
+}
+
+void Obstacle::setOrientation(Eigen::Quaterniond orientation) {
+  this->orientation = orientation;
+}
+
+void Obstacle::updateRelativePosition(Eigen::Vector3d detector_position) {
+  relative_position = world_position - detector_position;
 }
 
 #endif /* RADIATION_UTILS_OBSTACLE_H */
