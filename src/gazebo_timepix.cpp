@@ -105,25 +105,31 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
 
 /* LateUpdate //{ */
 void Timepix::LateUpdate() {
-  ignition::math::Quaterniond q = model_->WorldPose().Rot();
-  local2world.w()               = q.W();
-  local2world.x()               = q.X();
-  local2world.y()               = q.Y();
-  local2world.z()               = q.Z();
-  try {
-    world2local = local2world.inverse();
-  }
-  catch (...) {
-    return;
-  }
-  ROS_INFO_STREAM("Local to world Quaternion: " << world2local.coeffs());
+  world2local = Eigen::Quaterniond(model_->WorldPose().Rot().W(), model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z());
 
-  tf::Transform  transform;
-  tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
-  tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
-  transform.setOrigin(origin);
-  transform.setRotation(quat);
-  transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "local_origin", frame_name.str()));
+  Eigen::Vector3d ojler = world2local.toRotationMatrix().eulerAngles(0, 1, 2);
+  ROS_INFO("World to local: %.2f, %.2f, %.2f", ojler[0], ojler[1], ojler[2]);
+  local2world = world2local.inverse();
+
+  /* ignition::math::Quaterniond q = model_->WorldPose().Rot(); */
+  /* local2world.w()               = q.W(); */
+  /* local2world.x()               = q.X(); */
+  /* local2world.y()               = q.Y(); */
+  /* local2world.z()               = q.Z(); */
+  /* try { */
+  /*   world2local = local2world.inverse(); */
+  /* } */
+  /* catch (...) { */
+  /*   return; */
+  /* } */
+  /* ROS_INFO_STREAM("Local to world Quaternion: " << world2local.coeffs()); */
+
+  /* tf::Transform  transform; */
+  /* tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W()); */
+  /* tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z()); */
+  /* transform.setOrigin(origin); */
+  /* transform.setRotation(quat); */
+  /* transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "local_origin", frame_name.str())); */
 }
 //}
 
@@ -143,7 +149,7 @@ void Timepix::SimulationThread() {
 
     auto   end_time = std::chrono::high_resolution_clock::now();
     double dt       = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() / 1E9;
-    ROS_INFO("delta_t: %.8f", dt);
+    /* ROS_INFO("delta_t: %.8f", dt); */
     double sleep_time = std::max(0.0, exposition_time - dt);
     std::this_thread::sleep_for(std::chrono::duration<double>(sleep_time));
   }

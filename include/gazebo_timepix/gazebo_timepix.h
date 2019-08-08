@@ -53,6 +53,7 @@ private:
   Eigen::Quaterniond   local2world;
   Eigen::Quaterniond   world2local;
 
+  
 
   std::vector<Source>   sources;
   std::vector<Obstacle> obstacles;
