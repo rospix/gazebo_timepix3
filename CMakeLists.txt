@@ -38,6 +38,8 @@ add_library(
   ${PROJECT_NAME} SHARED
   src/${PROJECT_NAME}.cpp
   src/python_wrappers.cpp
+  src/geometry_utils.cpp
+  src/visual_utils.cpp
   )
 
 target_link_libraries(

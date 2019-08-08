@@ -7,6 +7,7 @@
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Geometry>
 #include <gazebo/physics/physics.hh>
+#include <gazebo_timepix/geometry_utils.h>
 
 class Obstacle {
 public:
@@ -15,32 +16,33 @@ public:
 
   unsigned int       getId();
   std::string        getMaterial();
-  Eigen::Vector3d    getWorldPosition();
   Eigen::Vector3d    getRelativePosition();
-  Eigen::Quaterniond getOrientation();
+  Eigen::Quaterniond getRelativeOrientation();
   Eigen::Vector3d    getScale();
-  void               updateRelativePosition(Eigen::Vector3d detector_position);
-  void               setWorldPosition(Eigen::Vector3d world_position);
-  void               setOrientation(Eigen::Quaterniond world_position);
+  Cuboid             getCuboid();
+
+  void updatePose(Eigen::Vector3d pos, Eigen::Quaterniond ori, Eigen::Vector3d sca);
 
 private:
   unsigned int       gazebo_id = 1;
   std::string        material;
-  Eigen::Vector3d    relative_position = Eigen::Vector3d::Zero();
-  Eigen::Vector3d    world_position;
-  Eigen::Quaterniond orientation;
+  Eigen::Vector3d    relative_position;
+  Eigen::Quaterniond relative_orientation;
   Eigen::Vector3d    scale;
+  Cuboid             cuboid;
 };
 
 Obstacle::~Obstacle() {
 }
 
-Obstacle::Obstacle(unsigned int gazebo_id, std::string material, Eigen::Vector3d world_position, Eigen::Quaterniond orientation, Eigen::Vector3d scale) {
-  this->gazebo_id      = gazebo_id;
-  this->material       = material;
-  this->world_position = world_position;
-  this->orientation    = orientation;
-  this->scale          = scale;
+Obstacle::Obstacle(unsigned int gazebo_id, std::string material, Eigen::Vector3d relative_position, Eigen::Quaterniond relative_orientation,
+                   Eigen::Vector3d scale) {
+  this->gazebo_id            = gazebo_id;
+  this->material             = material;
+  this->relative_position    = relative_position;
+  this->relative_orientation = relative_orientation;
+  this->scale                = scale;
+  this->cuboid               = Cuboid(relative_position, relative_orientation, scale);
 }
 
 unsigned int Obstacle::getId() {
@@ -51,32 +53,23 @@ std::string Obstacle::getMaterial() {
   return material;
 }
 
-Eigen::Vector3d Obstacle::getWorldPosition() {
-  return world_position;
-}
-
 Eigen::Vector3d Obstacle::getRelativePosition() {
   return relative_position;
 }
 
-Eigen::Quaterniond Obstacle::getOrientation() {
-  return orientation;
+Eigen::Quaterniond Obstacle::getRelativeOrientation() {
+  return relative_orientation;
 }
 
 Eigen::Vector3d Obstacle::getScale() {
   return scale;
 }
 
-void Obstacle::setWorldPosition(Eigen::Vector3d world_position) {
-  this->world_position = world_position;
-}
-
-void Obstacle::setOrientation(Eigen::Quaterniond orientation) {
-  this->orientation = orientation;
-}
-
-void Obstacle::updateRelativePosition(Eigen::Vector3d detector_position) {
-  relative_position = world_position - detector_position;
+void Obstacle::updatePose(Eigen::Vector3d relative_position, Eigen::Quaterniond relative_orientation, Eigen::Vector3d scale) {
+  cuboid                     = Cuboid(relative_position, relative_orientation, scale);
+  this->relative_position    = relative_position;
+  this->relative_orientation = relative_orientation;
+  this->scale                = scale;
 }
 
 #endif /* RADIATION_UTILS_OBSTACLE_H */

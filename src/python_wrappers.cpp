@@ -9,7 +9,7 @@ double getPhotoAbsorptionCoeff(std::string material, double energy) {
   // this is necessary because embedded python does not know where to find the script
   PyObject *sysmodule = PyImport_ImportModule("sys");
   PyObject *syspath   = PyObject_GetAttrString(sysmodule, "path");
-  std::string pkgpath = ros::package::getPath("new_timepix");
+  std::string pkgpath = ros::package::getPath("gazebo_timepix");
   std::stringstream ss;
   ss << pkgpath << "/scripts";
   PyList_Append(syspath, PyString_FromString(ss.str().c_str()));
