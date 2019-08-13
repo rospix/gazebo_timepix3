@@ -236,6 +236,7 @@ void BatchVisualizer::addRect(Rectangle rect, double r, double g, double b, doub
 
 /* addCuboid*/  //{
 void BatchVisualizer::addCuboid(Eigen::Vector3d pos, Eigen::Quaterniond ori, Eigen::Vector3d sca, Eigen::Vector4d color) {
+  std::cout << "[Visualizer]: Adding cuboid at pos: " << pos[0] << ", " << pos[1] << ", " << pos[2] << "\n";
   ++marker_count;
   visualization_msgs::Marker marker;
   marker.header.frame_id    = frame;

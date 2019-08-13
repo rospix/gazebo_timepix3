@@ -20,6 +20,7 @@
 #include <gazebo_timepix/visual_utils.h>
 
 #include <tf/tf.h>
+#include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
 
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource>   RadiationSourceConstPtr;
@@ -37,7 +38,6 @@ public:
 
 protected:
   virtual void Load(physics::ModelPtr _model, sdf::ElementPtr _sdf);
-  virtual void LateUpdate();
 
 private:
   std::uniform_real_distribution<double> rand_dbl;
@@ -47,18 +47,14 @@ private:
   boost::thread simulation_thread;
   void          simulate();
 
-  physics::ModelPtr    model_;
-  physics::WorldPtr    world_;
-  event::ConnectionPtr updateConnection_;
-  Eigen::Quaterniond   local2world;
-  Eigen::Quaterniond   world2local;
-
-  
+  physics::ModelPtr  model_;
+  physics::WorldPtr  world_;
 
   std::vector<Source>   sources;
   std::vector<Obstacle> obstacles;
   std::mutex            sources_mutex;
   std::mutex            obstacles_mutex;
+  std::mutex            transform_mutex;
 
   double                 sensor_size;
   double                 sensor_thickness;
