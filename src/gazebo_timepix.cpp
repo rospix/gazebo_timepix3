@@ -12,6 +12,7 @@
 
 #define BLUE Eigen::Vector4d(0.2, 0.2, 0.9, 0.7)
 #define ORANGE Eigen::Vector4d(0.9, 0.6, 0.2, 0.7)
+#define RED Eigen::Vector4d(1.0, 0.2, 0.2, 1.0)
 
 using namespace gazebo;
 
@@ -25,8 +26,6 @@ Timepix::~Timepix() {
 
 /* Load //{ */
 void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
-
-  /* std::cout << "AAAAAA\n"; */
 
   /* init local variables //{ */
   rand_dbl = std::uniform_real_distribution<double>(0, 1);
@@ -43,7 +42,6 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   ros::init(argc, argv, "gazebo_ros_radiation", ros::init_options::NoSigintHandler);
   this->ros_node.reset(new ros::NodeHandle("~"));
 
-  /* std::cout << "BBBBBBB\n"; */
   // init batch visualizer for rviz
   bv = BatchVisualizer(*ros_node.get(), frame_name.str());
   //}
@@ -64,9 +62,15 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   } else {
     ROS_WARN("[Timepix%u]: parameter 'sensor_thickness' was not specified", model_->GetId());
   }
+  if (_sdf->HasElement("material")) {
+    material = _sdf->Get<std::string>("material");
+  } else {
+    ROS_WARN("[Timepix%u]: parameter 'material' was not specified", model_->GetId());
+  }
   //}
 
-  /* std::cout << "CCCCCCC\n"; */
+  diagonal_length = std::sqrt(2 * sensor_size * sensor_size + sensor_thickness * sensor_thickness);
+
   // init sensor publisher
   std::stringstream ss;
   ss << "/" << model_->GetName().c_str() << "/timepix/photon_count";
@@ -97,16 +101,13 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   sensor_cuboid = Cuboid(A, B, C, D, E, F, G, H);
   //}
 
-  /* std::cout << "DDDDDDD\n"; */
-
   // subscribe to gazebo topics
   sources_sub     = transport_node_->Subscribe("~/radiation/sources", &Timepix::sourcesCallback, this, 1);
   obstacles_sub   = transport_node_->Subscribe("~/radiation/obstacles", &Timepix::obstaclesCallback, this, 1);
   termination_sub = transport_node_->Subscribe("~/radiation/termination", &Timepix::terminationCallback, this, 1);
 
-  /* std::cout << "EEEEEEE\n"; */
-
   ROS_INFO("[Timepix%u]: Plugin initialized", model_->GetId());
+  ROS_INFO("[Timepix%u]: Material: %s", model_->GetId(), material.c_str());
 
   terminated        = false;
   simulation_thread = boost::thread(boost::bind(&Timepix::SimulationThread, this));
@@ -115,14 +116,10 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
 
 /* SimulationThread //{ */
 void Timepix::SimulationThread() {
-  /* std::this_thread::sleep_for(std::chrono::duration<double>(1.0)); */
-  /* std::cout << "FFFFFFF\n"; */
   while (!terminated) {
     auto start_time = std::chrono::high_resolution_clock::now();
-    /* std::cout << "GGGGGG\n"; */
-    /* Relative geometry handler //{ */
 
-    /* std::cout << "HHHHHHHHH\n"; */
+    /* Relative geometry handler //{ */
     tf::Transform  transform;
     tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
     tf::Quaternion quat;
@@ -132,110 +129,145 @@ void Timepix::SimulationThread() {
     quat.setZ(model_->WorldPose().Rot().Z());
     transform.setOrigin(origin);
     transform.setRotation(quat);
-    /* std::cout << "IIIIII\n"; */
     transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "local_origin", frame_name.str()));
     //}
-    /* std::cout << "JJJJJJJ\n"; */
-
 
     bv.clear();
-    /* std::cout << "Tick\n"; */
+    simulate();
+
+    /* Environment visualization //{ */
     obstacles_mutex.lock();
     for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
       bv.addCuboid(o->getRelativePosition(), o->getRelativeOrientation(), o->getScale(), ORANGE);
     }
     obstacles_mutex.unlock();
+    sources_mutex.lock();
+    for (auto s = sources.begin(); s != sources.end(); s++) {
+      bv.addPoint(s->getRelativePosition(), ORANGE);
+    }
+    sources_mutex.unlock();
     bv.publish();
-    /* std::cout << "KKKKKKK\n"; */
+    //}
 
     auto   end_time   = std::chrono::high_resolution_clock::now();
     double dt         = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() / 1E9;
-    double sleep_time = std::max(0.0, exposition_time - dt);
-    std::this_thread::sleep_for(std::chrono::duration<double>(sleep_time));
+    double sleep_time = exposition_time - dt;
+    std::cout << "Simulation took " << dt << " seconds\n";
+    std::cout << "Sleeping for: " << sleep_time << " seconds\n";
+    if (sleep_time > 0.0) {
+      std::this_thread::sleep_for(std::chrono::duration<double>(sleep_time));
+    }
   }
+}
+//}
+
+/* simulate //{ */
+int Timepix::simulate() {
+  int required_photon_count = 0;
+  int photons_captured      = 0;
+  for (auto s = sources.begin(); s != sources.end(); s++) {
+    // TODO obstacle attenuation
+    /* double count_multiplier = obstacleAttenuation(*s); */
+    for (size_t i = 0; i < s->getApparentActivities().size(); i++) {
+      int samples = (int)(s->getApparentActivities()[i] * exposition_time * s->getDiagonalAbsorptionProb());
+      /* samples = samples * count_multiplier; */
+      std::cout << "For apparent activity " << s->getApparentActivities()[i] << " simulating " << samples << " photons\n";
+      for (int n = 0; n < samples; n++) {
+        Eigen::Vector3d intersect1 = sampleSide(s->getExposedSides()[i]);
+
+        Ray r = Ray::twopointCast(s->getRelativePosition(), intersect1);
+        bv.addRay(r, RED, 0.002);
+
+        for (int j = 0; j < 6; j++) {
+          if (j == s->getExposedSides()[i]) {
+            continue;
+          }
+          boost::optional<Eigen::Vector3d> intersect2 = sides[j].intersectionRay(r);
+
+          double pe_prob = 0.0;
+          if (intersect2) {
+            double track_length = (intersect2.get() - intersect1).norm();
+            pe_prob             = track_length * s->getPhotoAbsorptionCoeff();
+          }
+          double coin_flip = rand_dbl(rand_gen);
+          if (coin_flip < pe_prob) {
+            photons_captured++;
+          }
+          break;
+        }
+      }
+    }
+  }
+  return photons_captured;
 }
 //}
 
 /* sourcesCallback //{ */
 void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
   bool new_source = true;
-  sources_mutex.lock();
   for (auto s = sources.begin(); s != sources.end(); s++) {
     if (s->getId() == msg->id()) {
-      s->setWorldPosition(Eigen::Vector3d(msg->x(), msg->y(), msg->z()));
+      sources_mutex.lock();
+      sources.erase(s);
       sources_mutex.unlock();
       new_source = false;
       break;
     }
   }
-  sources_mutex.unlock();
-  if (!new_source) {
-    return;
+  if (new_source) {
+    ROS_INFO("[Timepix%u]: Registered RadiationSource%u", model_->GetId(), msg->id());
   }
-  Eigen::Vector3d source_pos(msg->x(), msg->y(), msg->z());
-  Source          s(msg->id(), msg->material(), msg->activity(), source_pos);
+  Eigen::Quaterniond local2world =
+      Eigen::Quaterniond(model_->WorldPose().Rot().W(), model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z());
+  Eigen::Quaterniond world2local = local2world.inverse();
+
+  Eigen::Vector3d     relative_position = world2local * (Eigen::Vector3d(msg->x(), msg->y(), msg->z()) - pos3toVector3d(model_->WorldPose()));
+  std::vector<double> apparent_activities;
+  std::vector<int>    exposed_sides;
+  for (size_t i = 0; i < sides.size(); i++) {
+    if (sides[i].normal_vector.dot(relative_position) > 0) {
+      double apparent_activity = (msg->activity() / 4 * M_PI) * rectSolidAngle(sides[i], relative_position);
+      apparent_activities.push_back(apparent_activity);
+      exposed_sides.push_back(i);
+    }
+  }
+  double photoabsorption_coeff    = getPhotoAbsorptionCoeff(material, msg->energy());
+  double diagonal_absorption_prob = diagonal_length * photoabsorption_coeff;
+  Source s(msg->id(), msg->material(), msg->activity(), msg->energy(), relative_position, apparent_activities, exposed_sides, photoabsorption_coeff,
+           diagonal_absorption_prob);
   sources_mutex.lock();
   sources.push_back(s);
   sources_mutex.unlock();
-  ROS_INFO("[Timepix%u]: Registered RadiationSource%u", model_->GetId(), msg->id());
 }
 //}
 
 /* obstaclesCallback //{ */
 void Timepix::obstaclesCallback(RadiationObstacleConstPtr &msg) {
-  std::cout << "111111\n";
   bool new_obstacle = true;
   for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
-    /*   // update known obstacle */
     if (o->getId() == msg->id()) {
-      std::cout << "22222\n";
-      transform_mutex.lock();
-      Eigen::Quaterniond local2world =
-          Eigen::Quaterniond(model_->WorldPose().Rot().W(), model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z());
-      Eigen::Quaterniond world2local = local2world.inverse();
-      std::cout << "MSG ori: " << msg->ori_w() << ", " << msg->ori_x() << ", " << msg->ori_y() << ", " << msg->ori_z() << "\n";
-      std::cout << "MSG pos: " << msg->pos_x() << ", " << msg->pos_y() << ", " << msg->pos_z() << "\n";
-      Eigen::Quaterniond relative_orientation = world2local * Eigen::Quaterniond(msg->ori_w(), msg->ori_x(), msg->ori_y(), msg->ori_z());
-      std::cout << "222AAAA\n";
-      Eigen::Vector3d relative_position = world2local * (Eigen::Vector3d(msg->pos_x(), msg->pos_y(), msg->pos_z()) - pos3toVector3d(model_->WorldPose()));
-      transform_mutex.unlock();
-      std::cout << "222BBBB\n";
-      Eigen::Vector3d obstacle_scale(msg->scale_x(), msg->scale_y(), msg->scale_z());
-      std::cout << "222CCCC\n";
       obstacles_mutex.lock();
-      o->updatePose(relative_position, relative_orientation, obstacle_scale);
+      obstacles.erase(o);
       obstacles_mutex.unlock();
-      std::cout << "222DDDD\n";
       new_obstacle = false;
-      std::cout << "Obstacle position updated: " << o->getRelativePosition() << "\n";
       break;
     }
   }
-  std::cout << "3333333\n";
-  if (!new_obstacle) {
-    return;
+  if (new_obstacle) {
+    ROS_INFO("[Timepix%u]: Registered RadiationObstacle%u", model_->GetId(), msg->id());
   }
-  // register new obstacle
-  std::cout << "444444\n";
-  transform_mutex.lock();
+  // store relative pose of the obstacle
   Eigen::Quaterniond local2world =
       Eigen::Quaterniond(model_->WorldPose().Rot().W(), model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z());
-  Eigen::Quaterniond world2local = local2world.inverse();
-  std::cout << "5555555\n";
+  Eigen::Quaterniond world2local          = local2world.inverse();
   Eigen::Quaterniond relative_orientation = world2local * Eigen::Quaterniond(msg->ori_w(), msg->ori_x(), msg->ori_y(), msg->ori_z());
-  std::cout << "56565656\n";
-  Eigen::Vector3d relative_position = world2local * (Eigen::Vector3d(msg->pos_x(), msg->pos_y(), msg->pos_z()) - pos3toVector3d(model_->WorldPose()));
-  std::cout << "666666\n";
-  transform_mutex.unlock();
-  Eigen::Vector3d obstacle_scale(msg->scale_x(), msg->scale_y(), msg->scale_z());
-  std::cout << "77777777\n";
+  Eigen::Vector3d    relative_position    = world2local * (Eigen::Vector3d(msg->pos_x(), msg->pos_y(), msg->pos_z()) - pos3toVector3d(model_->WorldPose()));
+  Eigen::Vector3d    obstacle_scale(msg->scale_x(), msg->scale_y(), msg->scale_z());
 
   Obstacle o(msg->id(), msg->material(), relative_position, relative_orientation, obstacle_scale);
-  std::cout << "888888\n";
   obstacles_mutex.lock();
   obstacles.push_back(o);
   obstacles_mutex.unlock();
-  ROS_INFO("[Timepix%u]: Registered RadiationObstacle%u", model_->GetId(), msg->id());
 }
 //}
 

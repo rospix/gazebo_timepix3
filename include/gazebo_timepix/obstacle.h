@@ -19,7 +19,7 @@ public:
   Eigen::Vector3d    getRelativePosition();
   Eigen::Quaterniond getRelativeOrientation();
   Eigen::Vector3d    getScale();
-  Cuboid             getCuboid();
+  std::vector<int>   exposed_sides;
 
   void updatePose(Eigen::Vector3d pos, Eigen::Quaterniond ori, Eigen::Vector3d sca);
 
@@ -29,7 +29,6 @@ private:
   Eigen::Vector3d    relative_position;
   Eigen::Quaterniond relative_orientation;
   Eigen::Vector3d    scale;
-  Cuboid             cuboid;
 };
 
 Obstacle::~Obstacle() {
@@ -42,7 +41,6 @@ Obstacle::Obstacle(unsigned int gazebo_id, std::string material, Eigen::Vector3d
   this->relative_position    = relative_position;
   this->relative_orientation = relative_orientation;
   this->scale                = scale;
-  this->cuboid               = Cuboid(relative_position, relative_orientation, scale);
 }
 
 unsigned int Obstacle::getId() {
@@ -63,13 +61,6 @@ Eigen::Quaterniond Obstacle::getRelativeOrientation() {
 
 Eigen::Vector3d Obstacle::getScale() {
   return scale;
-}
-
-void Obstacle::updatePose(Eigen::Vector3d pos, Eigen::Quaterniond ori, Eigen::Vector3d sca) {
-  cuboid                     = Cuboid(relative_position, relative_orientation, scale);
-  this->relative_position    = pos;
-  this->relative_orientation = ori;
-  this->scale                = sca;
 }
 
 #endif /* RADIATION_UTILS_OBSTACLE_H */

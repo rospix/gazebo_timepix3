@@ -23,9 +23,9 @@ public:
   ~BatchVisualizer();
   BatchVisualizer(ros::NodeHandle rosNode, std::string frame);
 
-  void addRay(Ray ray, double r = 1.0, double g = 0.0, double b = 0.0, double scale = 0.02);
-  void addPoint(Eigen::Vector3d p, double r = 0.0, double g = 1.0, double b = 0.3, double scale = 0.04);
-  void addRect(Rectangle rect, double r = 0.5, double g = 0.5, double b = 0.0, double scale = 0.002);
+  void addRay(Ray ray, Eigen::Vector4d color, double scale = 0.02);
+  void addPoint(Eigen::Vector3d p, Eigen::Vector4d color, double scale = 0.04);
+  void addRect(Rectangle rect, Eigen::Vector4d color, double scale = 0.002);
   void addCuboid(Eigen::Vector3d pos, Eigen::Quaterniond ori, Eigen::Vector3d sca, Eigen::Vector4d color);
 
   void clear();

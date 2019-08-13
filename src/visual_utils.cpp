@@ -123,7 +123,7 @@ void VisualTools::visualizeRect(ros::Publisher pub, Rectangle rect, std::string 
 //}
 
 /* addRay */  //{
-void BatchVisualizer::addRay(Ray ray, double r, double g, double b, double scale) {
+void BatchVisualizer::addRay(Ray ray, Eigen::Vector4d color, double scale) {
   ++marker_count;
   visualization_msgs::Marker marker;
   marker.header.frame_id    = frame;
@@ -136,10 +136,10 @@ void BatchVisualizer::addRay(Ray ray, double r, double g, double b, double scale
 
   marker.scale.x = scale;
 
-  marker.color.r = r;
-  marker.color.g = g;
-  marker.color.b = b;
-  marker.color.a = 1.0;
+  marker.color.r = color[0];
+  marker.color.g = color[1];
+  marker.color.b = color[2];
+  marker.color.a = color[3];
 
   geometry_msgs::Point p1, p2;
 
@@ -158,7 +158,7 @@ void BatchVisualizer::addRay(Ray ray, double r, double g, double b, double scale
 //}
 
 /* addPoint */  //{
-void BatchVisualizer::addPoint(Eigen::Vector3d p, double r, double g, double b, double scale) {
+void BatchVisualizer::addPoint(Eigen::Vector3d p, Eigen::Vector4d color, double scale) {
   ++marker_count;
   visualization_msgs::Marker marker;
   marker.header.frame_id    = frame;
@@ -172,10 +172,10 @@ void BatchVisualizer::addPoint(Eigen::Vector3d p, double r, double g, double b, 
   marker.scale.x = scale;
   marker.scale.y = scale;
 
-  marker.color.r = r;
-  marker.color.g = g;
-  marker.color.b = b;
-  marker.color.a = 1.0;
+  marker.color.r = color[0];
+  marker.color.g = color[1];
+  marker.color.b = color[2];
+  marker.color.a = color[3];
 
   geometry_msgs::Point gp;
   gp.x = p[0];
@@ -188,7 +188,7 @@ void BatchVisualizer::addPoint(Eigen::Vector3d p, double r, double g, double b, 
 //}
 
 /* addRect */  //{
-void BatchVisualizer::addRect(Rectangle rect, double r, double g, double b, double scale) {
+void BatchVisualizer::addRect(Rectangle rect, Eigen::Vector4d color, double scale) {
   ++marker_count;
   visualization_msgs::Marker marker;
   marker.header.frame_id    = frame;
@@ -201,10 +201,10 @@ void BatchVisualizer::addRect(Rectangle rect, double r, double g, double b, doub
 
   marker.scale.x = scale;
 
-  marker.color.r = r;
-  marker.color.g = g;
-  marker.color.b = b;
-  marker.color.a = 1.0;
+  marker.color.r = color[0];
+  marker.color.g = color[1];
+  marker.color.b = color[2];
+  marker.color.a = color[3];
 
   geometry_msgs::Point pa, pb, pc, pd;
 
@@ -234,9 +234,8 @@ void BatchVisualizer::addRect(Rectangle rect, double r, double g, double b, doub
 }
 //}
 
-/* addCuboid*/  //{
+/* addCuboid */  //{
 void BatchVisualizer::addCuboid(Eigen::Vector3d pos, Eigen::Quaterniond ori, Eigen::Vector3d sca, Eigen::Vector4d color) {
-  std::cout << "[Visualizer]: Adding cuboid at pos: " << pos[0] << ", " << pos[1] << ", " << pos[2] << "\n";
   ++marker_count;
   visualization_msgs::Marker marker;
   marker.header.frame_id    = frame;

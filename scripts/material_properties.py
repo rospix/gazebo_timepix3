@@ -10,7 +10,7 @@ def photoabsorption_coeff(material, energy):
     # Input params: material (string, lowercase), energy (float, MeV)
     # Return params: photoabsorption coefficient (float)
 
-    print 'Material:' , material, ', Photon energy:', energy
+    # print 'Material:' , material, ', Photon energy:', energy
 
     ## TODO make this more robust by searching for the gazebo_timepix package
     input_path='/home/stibipet/mrs_workspace/src/radiation_nodes/gazebo_timepix/nist/' + material + '.csv'
@@ -26,7 +26,7 @@ def photoabsorption_coeff(material, energy):
     mac_interp = interp1d(x, mac, kind='quadratic')
 
 
-    print material, 'photoabsorption coefficient for', energy, 'MeV photons:', mac_interp(energy)
+    # print material, 'photoabsorption coefficient for', energy, 'MeV photons:', mac_interp(energy)
 
     # # #{ Plotting
     # x_dense = np.linspace(min(x), max(x), num=x.shape[0]*100, endpoint=True)

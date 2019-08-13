@@ -45,10 +45,10 @@ private:
 
   bool          terminated;
   boost::thread simulation_thread;
-  void          simulate();
+  int           simulate();
 
-  physics::ModelPtr  model_;
-  physics::WorldPtr  world_;
+  physics::ModelPtr model_;
+  physics::WorldPtr world_;
 
   std::vector<Source>   sources;
   std::vector<Obstacle> obstacles;
@@ -58,10 +58,12 @@ private:
 
   double                 sensor_size;
   double                 sensor_thickness;
+  double                 diagonal_length;
   double                 exposition_time;
   std::vector<Rectangle> sides;
   Cuboid                 sensor_cuboid;
 
+  std::string              material;
   std::stringstream        frame_name;
   transport::NodePtr       transport_node_;
   transport::SubscriberPtr sources_sub;
