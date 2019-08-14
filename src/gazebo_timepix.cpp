@@ -253,15 +253,26 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
       exposed_sides.push_back(i);
     }
   }
-  std::vector<double> timepix_material_properties   = getMaterialProperties(material, msg->energy());
-  double              timepix_photoabsorption_coeff = timepix_material_properties[0];
-  double              timepix_density               = timepix_material_properties[1];
 
-  std::vector<double> air_material_properties   = getMaterialProperties("air", msg->energy());
-  double              air_photoabsorption_coeff = air_material_properties[0];
-  double              air_density               = air_material_properties[1];
-  double              diagonal_absorption_prob  = diagonal_length * timepix_photoabsorption_coeff;
-  Source              s(msg->id(), msg->material(), msg->activity(), msg->energy(), timepix_density, relative_position, apparent_activities, exposed_sides,
+  // TODO update pres python approximator moc zpomaluje simulaci
+  /* std::vector<double> timepix_material_properties   = getMaterialProperties(material, msg->energy()); */
+  /* double              timepix_photoabsorption_coeff = timepix_material_properties[0]; */
+  /* double              timepix_density               = timepix_material_properties[1]; */
+
+  /* std::vector<double> air_material_properties   = getMaterialProperties("air", msg->energy()); */
+  /* double              air_photoabsorption_coeff = air_material_properties[0]; */
+  /* double              air_density               = air_material_properties[1]; */
+  /* double              diagonal_absorption_prob  = diagonal_length * timepix_photoabsorption_coeff; */
+
+  // DEBUG
+  double timepix_photoabsorption_coeff = 1.0;
+  double timepix_density               = 3.0;
+  double air_photoabsorption_coeff     = 1.0;
+  double air_density                   = 0.03;
+  double diagonal_absorption_prob      = diagonal_length * timepix_photoabsorption_coeff;
+  // DEBUG
+
+  Source s(msg->id(), msg->material(), msg->activity(), msg->energy(), timepix_density, relative_position, apparent_activities, exposed_sides,
            timepix_photoabsorption_coeff, diagonal_absorption_prob, air_photoabsorption_coeff, air_density);
 
   sources_mutex.lock();
