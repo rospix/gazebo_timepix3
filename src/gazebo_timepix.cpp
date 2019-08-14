@@ -10,9 +10,13 @@
 #define BOTTOM 4
 #define TOP 5
 
+#define AIR_MASS_ATTENUATION_COEFF 3606.0
+#define AIR_DENSITY 0.001205
+
 #define BLUE Eigen::Vector4d(0.2, 0.2, 0.9, 0.7)
 #define ORANGE Eigen::Vector4d(0.9, 0.6, 0.2, 0.7)
 #define RED Eigen::Vector4d(1.0, 0.2, 0.2, 1.0)
+#define GREEN Eigen::Vector4d(0.2, 1.0, 0.2, 1.0)
 
 using namespace gazebo;
 
@@ -133,28 +137,43 @@ void Timepix::SimulationThread() {
     //}
 
     bv.clear();
-    simulate();
+    int photons = simulate();
+    /* bv.addCuboid(Eigen::Vector3d::Zero(), Eigen::Quaterniond::Identity(), Eigen::Vector3d(sensor_thickness, sensor_size, sensor_size), BLUE); */
 
-    /* Environment visualization //{ */
-    obstacles_mutex.lock();
-    for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
-      bv.addCuboid(o->getRelativePosition(), o->getRelativeOrientation(), o->getScale(), ORANGE);
-    }
-    obstacles_mutex.unlock();
-    sources_mutex.lock();
-    for (auto s = sources.begin(); s != sources.end(); s++) {
-      bv.addPoint(s->getRelativePosition(), ORANGE);
-    }
-    sources_mutex.unlock();
-    bv.publish();
+    /* /1* Environment visualization //{ *1/ */
+    /* obstacles_mutex.lock(); */
+    /* for (auto o = obstacles.begin(); o != obstacles.end(); o++) { */
+    /*   bv.addCuboid(o->getRelativePosition(), o->getRelativeOrientation(), o->getScale(), ORANGE); */
+    /* } */
+    /* obstacles_mutex.unlock(); */
+    /* sources_mutex.lock(); */
+    /* for (auto s = sources.begin(); s != sources.end(); s++) { */
+    /*   bv.addPoint(s->getRelativePosition(), ORANGE); */
+    /* } */
+    /* sources_mutex.unlock(); */
+    /* bv.publish(); */
+    /* //} */
+
+    /* build msg //{ */
+    gazebo_rad_msgs::Timepix msg;
+    msg.id       = model_->GetId();
+    msg.count    = photons;
+    msg.exposure = exposition_time;
+    msg.size.x   = sensor_thickness;
+    msg.size.y   = sensor_size;
+    msg.size.z   = sensor_size;
+    msg.stamp    = ros::Time::now();
     //}
+
+    timepix_pub.publish(msg);
 
     auto   end_time   = std::chrono::high_resolution_clock::now();
     double dt         = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() / 1E9;
     double sleep_time = exposition_time - dt;
     std::cout << "Simulation took " << dt << " seconds\n";
-    std::cout << "Sleeping for: " << sleep_time << " seconds\n";
+    std::cout << "Captured " << photons << " photons (flux: " << photons / exposition_time << " photons/sec)\n";
     if (sleep_time > 0.0) {
+      std::cout << "Sleeping for: " << sleep_time << " seconds\n";
       std::this_thread::sleep_for(std::chrono::duration<double>(sleep_time));
     }
   }
@@ -167,16 +186,16 @@ int Timepix::simulate() {
   int photons_captured      = 0;
   for (auto s = sources.begin(); s != sources.end(); s++) {
     // TODO obstacle attenuation
-    /* double count_multiplier = obstacleAttenuation(*s); */
+    double count_multiplier = obstacleAttenuation(*s);
+    /* std::cout << "Environment attenuation: " << 100 * (1 - count_multiplier) << "\%\n"; */
     for (size_t i = 0; i < s->getApparentActivities().size(); i++) {
-      int samples = (int)(s->getApparentActivities()[i] * exposition_time * s->getDiagonalAbsorptionProb());
-      /* samples = samples * count_multiplier; */
-      std::cout << "For apparent activity " << s->getApparentActivities()[i] << " simulating " << samples << " photons\n";
+      int samples = (int)(s->getApparentActivities()[i] * exposition_time * s->getDiagonalAbsorptionProb() * count_multiplier);
+      required_photon_count += samples;
+      /* std::cout << "For apparent activity " << s->getApparentActivities()[i] << " simulating " << samples << " photons\n"; */
       for (int n = 0; n < samples; n++) {
         Eigen::Vector3d intersect1 = sampleSide(s->getExposedSides()[i]);
 
         Ray r = Ray::twopointCast(s->getRelativePosition(), intersect1);
-        bv.addRay(r, RED, 0.002);
 
         for (int j = 0; j < 6; j++) {
           if (j == s->getExposedSides()[i]) {
@@ -187,17 +206,23 @@ int Timepix::simulate() {
           double pe_prob = 0.0;
           if (intersect2) {
             double track_length = (intersect2.get() - intersect1).norm();
-            pe_prob             = track_length * s->getPhotoAbsorptionCoeff();
+            pe_prob             = photoabsorptionProbability(track_length, s->getTimepixPhotoAbsorptionCoeff(), s->getTimepixDensity());
+            /* std::cout << "Capture probability: " << pe_prob << "\n"; */
+
+            double coin_flip = rand_dbl(rand_gen);
+            if (coin_flip < pe_prob) {
+              bv.addRay(r, GREEN, 0.0002);
+              photons_captured++;
+            } else {
+              bv.addRay(r, RED, 0.0002);
+            }
+            break;
           }
-          double coin_flip = rand_dbl(rand_gen);
-          if (coin_flip < pe_prob) {
-            photons_captured++;
-          }
-          break;
         }
       }
     }
   }
+  std::cout << "Simulated " << required_photon_count << " photons\n";
   return photons_captured;
 }
 //}
@@ -231,10 +256,17 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
       exposed_sides.push_back(i);
     }
   }
-  double photoabsorption_coeff    = getPhotoAbsorptionCoeff(material, msg->energy());
-  double diagonal_absorption_prob = diagonal_length * photoabsorption_coeff;
-  Source s(msg->id(), msg->material(), msg->activity(), msg->energy(), relative_position, apparent_activities, exposed_sides, photoabsorption_coeff,
-           diagonal_absorption_prob);
+  std::vector<double> timepix_material_properties   = getMaterialProperties(material, msg->energy());
+  double              timepix_photoabsorption_coeff = timepix_material_properties[0];
+  double              timepix_density               = timepix_material_properties[1];
+
+  std::vector<double> air_material_properties   = getMaterialProperties("air", msg->energy());
+  double              air_photoabsorption_coeff = air_material_properties[0];
+  double              air_density               = air_material_properties[1];
+  double              diagonal_absorption_prob  = diagonal_length * timepix_photoabsorption_coeff;
+  Source              s(msg->id(), msg->material(), msg->activity(), msg->energy(), timepix_density, relative_position, apparent_activities, exposed_sides,
+           timepix_photoabsorption_coeff, diagonal_absorption_prob, air_photoabsorption_coeff, air_density);
+
   sources_mutex.lock();
   sources.push_back(s);
   sources_mutex.unlock();
@@ -313,6 +345,49 @@ Eigen::Vector3d Timepix::sampleSide(int index) {
   double k2 = rand_dbl(rand_gen);
 
   return sides[index].points[0] + k1 * sides[index].basis.col(0) + k2 * sides[index].basis.col(1);
+}
+//}
+
+/* photoabsorptionProbability //{*/
+double Timepix::photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density) {
+  return 1.0 - std::exp(-mass_att_coeff * material_thickness * 100 * material_density);  // multiply by 100 to get thickness in cm
+}
+//}
+
+/* obstacleAttenuation //{ */
+// return percentage of particles which will survive their way through obstacles and air
+double Timepix::obstacleAttenuation(Source s) {
+  obstacles_mutex.lock();
+  Ray    r                    = Ray::twopointCast(s.getRelativePosition(), Eigen::Vector3d::Zero());
+  double ret                  = 1.0;
+  double total_obstacle_track = 0.0;
+  int    obstacles_in_way     = 0;
+  for (Obstacle o : obstacles) {
+    std::vector<Eigen::Vector3d> intersections;
+    for (int i = 0; i < 6; i++) {
+      boost::optional<Eigen::Vector3d> intersect = o.getSides()[i].intersectionRay(r);
+      if (intersect) {
+        if ((s.getRelativePosition() - *intersect).norm() < s.getRelativePosition().norm()) {
+          intersections.push_back(*intersect);
+        } else {
+          break;
+        }
+      }
+    }
+    if (intersections.size() > 1) {
+      double              track_length          = (intersections[1] - intersections[0]).norm();
+      Ray                 obstacle_track        = Ray::twopointCast(intersections[1], intersections[0]);
+      std::vector<double> material_properties   = getMaterialProperties(material, s.getEnergy());
+      double              photoabsorption_coeff = material_properties[0];
+      double              density               = material_properties[1];
+      ret *= (1 - photoabsorptionProbability(track_length, photoabsorption_coeff, density));
+      obstacles_in_way++;
+      total_obstacle_track += track_length;
+    }
+  }
+  ret *= (1 - photoabsorptionProbability(s.getRelativePosition().norm() - total_obstacle_track, s.getAirPhotoAbsorptionCoeff(), s.getAirDensity()));
+  obstacles_mutex.unlock();
+  return ret;
 }
 //}
 

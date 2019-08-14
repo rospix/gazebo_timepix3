@@ -3,4 +3,4 @@
 #include <string>
 #include <sstream>
 
-double getPhotoAbsorptionCoeff(std::string material, double energy);
+std::vector<double> getMaterialProperties(std::string material, double energy);

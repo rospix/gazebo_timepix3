@@ -78,10 +78,11 @@ private:
   void obstaclesCallback(RadiationObstacleConstPtr &msg);
   void terminationCallback(TerminationConstPtr &msg);
 
+  BatchVisualizer bv;
   Eigen::Vector3d sampleRectangle(Rectangle r);
   Eigen::Vector3d sampleSide(int index);
-
-  BatchVisualizer bv;
+  double          obstacleAttenuation(Source s);
+  double          photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density);
 };
 GZ_REGISTER_MODEL_PLUGIN(Timepix)
 Timepix::Timepix() : ModelPlugin() {

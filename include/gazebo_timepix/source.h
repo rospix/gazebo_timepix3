@@ -9,14 +9,18 @@
 class Source {
 public:
   ~Source();
-  Source(unsigned int gazebo_id, std::string material, double activity, double energy, Eigen::Vector3d relative_position,
-         std::vector<double> apparent_activities, std::vector<int> exposed_sides, double photoabsorption_coeff, double diagnonal_absorption_prob);
+  Source(unsigned int gazebo_id, std::string material, double activity, double energy, double timepix_density, Eigen::Vector3d relative_position,
+         std::vector<double> apparent_activities, std::vector<int> exposed_sides, double timepix_photoabsorption_coeff, double diagnonal_absorption_prob,
+         double air_photoabsorption_coeff, double air_density);
 
   unsigned int     getId();
   std::string      getMaterial();
   double           getActivity();
   double           getEnergy();
-  double           getPhotoAbsorptionCoeff();
+  double           getTimepixDensity();
+  double           getTimepixPhotoAbsorptionCoeff();
+  double           getAirDensity();
+  double           getAirPhotoAbsorptionCoeff();
   double           getDiagonalAbsorptionProb();
   std::vector<int> getExposedSides();
 
@@ -32,8 +36,11 @@ private:
   std::string  material;
   double       activity;
   double       energy;
+  double       timepix_density;
   double       diagnonal_absorption_prob;
-  double       photoabsorption_coeff;
+  double       timepix_photoabsorption_coeff;
+  double       air_photoabsorption_coeff;
+  double       air_density;
 
   std::vector<double> apparent_activities;
   std::vector<int>    exposed_sides;
@@ -43,17 +50,21 @@ private:
 Source::~Source() {
 }
 
-Source::Source(unsigned int gazebo_id, std::string material, double activity, double energy, Eigen::Vector3d relative_position,
-               std::vector<double> apparent_activities, std::vector<int> exposed_sides, double photoabsorption_coeff, double diagnonal_absorption_prob) {
-  this->gazebo_id                 = gazebo_id;
-  this->material                  = material;
-  this->activity                  = activity;
-  this->energy                    = energy;
-  this->relative_position         = relative_position;
-  this->apparent_activities       = apparent_activities;
-  this->exposed_sides             = exposed_sides;
-  this->photoabsorption_coeff     = photoabsorption_coeff;
-  this->diagnonal_absorption_prob = diagnonal_absorption_prob;
+Source::Source(unsigned int gazebo_id, std::string material, double activity, double energy, double timepix_density, Eigen::Vector3d relative_position,
+               std::vector<double> apparent_activities, std::vector<int> exposed_sides, double timepix_photoabsorption_coeff, double diagnonal_absorption_prob,
+               double air_photoabsorption_coeff, double air_density) {
+  this->gazebo_id                     = gazebo_id;
+  this->material                      = material;
+  this->activity                      = activity;
+  this->energy                        = energy;
+  this->timepix_density               = timepix_density;
+  this->relative_position             = relative_position;
+  this->apparent_activities           = apparent_activities;
+  this->exposed_sides                 = exposed_sides;
+  this->timepix_photoabsorption_coeff = timepix_photoabsorption_coeff;
+  this->air_photoabsorption_coeff     = air_photoabsorption_coeff;
+  this->air_density                   = air_density;
+  this->diagnonal_absorption_prob     = diagnonal_absorption_prob;
 }
 
 unsigned int Source::getId() {
@@ -72,6 +83,14 @@ double Source::getEnergy() {
   return energy;
 }
 
+double Source::getTimepixDensity() {
+  return timepix_density;
+}
+
+double Source::getAirDensity(){
+  return air_density;
+}
+
 std::vector<double> Source::getApparentActivities() {
   return apparent_activities;
 }
@@ -84,8 +103,12 @@ Eigen::Vector3d Source::getRelativePosition() {
   return relative_position;
 }
 
-double Source::getPhotoAbsorptionCoeff(){
-  return photoabsorption_coeff;
+double Source::getTimepixPhotoAbsorptionCoeff() {
+  return timepix_photoabsorption_coeff;
+}
+
+double Source::getAirPhotoAbsorptionCoeff() {
+  return timepix_photoabsorption_coeff;
 }
 
 double Source::getDiagonalAbsorptionProb() {

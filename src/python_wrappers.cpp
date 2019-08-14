@@ -1,15 +1,15 @@
 #include <gazebo_timepix/python_wrappers.h>
 
-/* getPhotoAbsorptionCoeff //{ */
-double getPhotoAbsorptionCoeff(std::string material, double energy) {
+/* getMaterialProperties //{ */
+std::vector<double> getMaterialProperties(std::string material, double energy) {
 
   // initialize embedded Python
-  Py_Initialize();  
-  
+  Py_Initialize();
+
   // this is necessary because embedded python does not know where to find the script
-  PyObject *sysmodule = PyImport_ImportModule("sys");
-  PyObject *syspath   = PyObject_GetAttrString(sysmodule, "path");
-  std::string pkgpath = ros::package::getPath("gazebo_timepix");
+  PyObject *        sysmodule = PyImport_ImportModule("sys");
+  PyObject *        syspath   = PyObject_GetAttrString(sysmodule, "path");
+  std::string       pkgpath   = ros::package::getPath("gazebo_timepix");
   std::stringstream ss;
   ss << pkgpath << "/scripts";
   PyList_Append(syspath, PyString_FromString(ss.str().c_str()));
@@ -17,14 +17,17 @@ double getPhotoAbsorptionCoeff(std::string material, double energy) {
   Py_DECREF(sysmodule);
 
   // import the interpolation module
-  PyObject *myModule = PyImport_ImportModule("material_properties");
+  PyObject *my_module = PyImport_ImportModule("material_properties");
 
   // load the interpolation function
-  PyObject *myFunction = PyObject_GetAttrString(myModule, (char *)"photoabsorption_coeff");
-  PyObject *args       = PyTuple_Pack(2, PyString_FromString(material.c_str()), PyFloat_FromDouble(energy));
-  PyObject *myResult   = PyObject_CallObject(myFunction, args);
+  PyObject *my_function = PyObject_GetAttrString(my_module, (char *)"get_material_properties");
+  PyObject *args        = PyTuple_Pack(2, PyString_FromString(material.c_str()), PyFloat_FromDouble(energy));
+  PyObject *my_result   = PyObject_CallObject(my_function, args);
 
-  // return the photoabsorption coefficient
-  return PyFloat_AsDouble(myResult);
+  // return the photoabsorption coefficient and density
+  std::vector<double> ret;
+  ret.push_back(PyFloat_AsDouble(PyTuple_GetItem(my_result, 0)));
+  ret.push_back(PyFloat_AsDouble(PyTuple_GetItem(my_result, 1)));
+  return ret;
 }
 //}

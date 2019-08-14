@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import interp1d
 
-def photoabsorption_coeff(material, energy):
+def get_material_properties(material, energy):
     ## This script interpolates the mass attenuation coefficient from NIST tables
     # Input params: material (string, lowercase), energy (float, MeV)
     # Return params: photoabsorption coefficient (float)
@@ -22,11 +22,11 @@ def photoabsorption_coeff(material, energy):
 
     x = data[:,0]
     mac = data[:,1] # mass attenuation coefficient
+    density = data[0,3] # mass attenuation coefficient
 
     mac_interp = interp1d(x, mac, kind='quadratic')
 
-
-    # print material, 'photoabsorption coefficient for', energy, 'MeV photons:', mac_interp(energy)
+    # print material, 'photoabsorption coefficient for', energy, 'MeV photons:', mac_interp(energy), 'density', density
 
     # # #{ Plotting
     # x_dense = np.linspace(min(x), max(x), num=x.shape[0]*100, endpoint=True)
@@ -40,4 +40,4 @@ def photoabsorption_coeff(material, energy):
     # plt.show()
     # # #}
 
-    return mac_interp(energy)
+    return mac_interp(energy), density
