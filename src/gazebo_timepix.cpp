@@ -10,9 +10,6 @@
 #define BOTTOM 4
 #define TOP 5
 
-#define AIR_MASS_ATTENUATION_COEFF 3606.0
-#define AIR_DENSITY 0.001205
-
 #define BLUE Eigen::Vector4d(0.2, 0.2, 0.9, 0.7)
 #define ORANGE Eigen::Vector4d(0.9, 0.6, 0.2, 0.7)
 #define RED Eigen::Vector4d(1.0, 0.2, 0.2, 1.0)
