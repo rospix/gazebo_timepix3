@@ -16,7 +16,7 @@
     </link>
 
     <plugin name="gazebo_timepix" filename="libgazebo_timepix.so">
-      <exposition_time>0.5</exposition_time>        <!-- [s] -->
+      <exposition_time>0.1</exposition_time>        <!-- [s] -->
       <sensor_size>0.01408</sensor_size>            <!-- [m] -->
       <sensor_thickness>0.0003</sensor_thickness>   <!-- [m] -->
       <!--  <sensor_size>0.2</sensor_size>             -->     <!-- [m] -->
