@@ -394,7 +394,7 @@ namespace gazebo
     /* this->sensor_size      = 0.2; */
     /* this->sensor_thickness = 0.05; */
 
-    this->diagonal_length = std::sqrt(2 * sensor_size * sensor_size + sensor_thickness * sensor_thickness);
+    this->diagonal_length = std::sqrt((2 * (sensor_size * sensor_size)) + (sensor_thickness * sensor_thickness));
     this->sensor_material = Si;
     /* this->sensor_material = CdTe; */
 
@@ -600,7 +600,7 @@ namespace gazebo
     if (s.material == "Cs137") {
       ret *= (1 - photoabsorptionProbability(s.relative_position.norm() - total_obstacle_track, air.mac600kev, air.density));
     } else if (s.material == "Am241") {
-      ret *= (1 - photoabsorptionProbability(s.relative_position.norm() - total_obstacle_track, air.mac600kev, air.density));
+      ret *= (1 - photoabsorptionProbability(s.relative_position.norm() - total_obstacle_track, air.mac60kev, air.density));
     }
     obstacles_mutex.unlock();
     return ret;
