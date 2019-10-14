@@ -19,9 +19,9 @@
 #include <tf/transform_broadcaster.h>
 
 // package libraries
-#include <gazebo_generic_dosimeter/source.h>
-#include <gazebo_generic_dosimeter/geometry_utils.h>
-#include <gazebo_generic_dosimeter/visual_utils.h>
+#include <gazebo_timepix/source.h>
+#include <gazebo_timepix/geometry_utils.h>
+#include <gazebo_timepix/visual_utils.h>
 
 // ros and gazebo messages
 #include <gazebo_rad_msgs/Timepix.h>
