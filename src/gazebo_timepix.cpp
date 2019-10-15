@@ -269,7 +269,7 @@ double Timepix::photoabsorptionProbability(double material_thickness, double mas
 //}
 
 /* getDensity //{ */
-double getDensity(std::string material) {
+double Timepix::getDensity(std::string material) {
   // TODO
   // lookup nist table for density
   return -1;
@@ -277,7 +277,7 @@ double getDensity(std::string material) {
 //}
 
 /* calculateMassAttCoeff //{ */
-double calculateMassAttCoeff(double photon_energy, double material_density) {
+double Timepix::calculateMassAttCoeff(double photon_energy, double material_density) {
   // TODO
   // lookup nist table
   // interpolate
