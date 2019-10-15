@@ -59,8 +59,15 @@ private:
   void          Simulate();
   void          buildSensorCuboid();
 
-  std::set<Triplet>          calculateSideProperties(Source s);
-  double                        exposition_seconds = 1;
+  std::set<Triplet> calculateSideProperties(Source s);
+  double            getDensity(std::string material);
+  double            calculateMassAttCoeff(double photon_energy, double material_density);
+  double            photoabsorptionProbability(double material_thickness, double mass_att_coeff, double mat_density);
+
+  double exposition_seconds = 1;
+  double density;
+  double diagonal_length;
+
   std::chrono::duration<double> exposition_duration;
 
   std::vector<Source>    sources;

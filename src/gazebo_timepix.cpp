@@ -61,6 +61,7 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   buildSensorCuboid();
   local_frame << model_->GetName().c_str() << "/timepix_origin";
   global_frame << "local_origin";
+  density = getDensity(material);
 
   rand_dbl = std::uniform_real_distribution<double>(0, 1);
 
@@ -148,8 +149,11 @@ void Timepix::Simulate() {
           boost::optional<Eigen::Vector3d> intersect2 = sides[j].intersectionRay(r);
           double                           pe_prob;
           if (intersect2) {
-            double track_length = (intersect2.get() - intersect1).norm();
-            pe_prob             = track_length / (sides[FRONT].points[2] - sides[BACK].points[1]).norm();  // TODO
+            double track_length   = (intersect2.get() - intersect1).norm();
+            double mass_att_coeff = calculateMassAttCoeff(s->getEnergy(), density);
+            double diag_abs_prob  = photoabsorptionProbability(diagonal_length, mass_att_coeff, density);
+            pe_prob               = photoabsorptionProbability(track_length, mass_att_coeff, density) / diag_abs_prob;
+
             /* std::cout << "pe_prob: " << (pe_prob * 100) << "\%\n"; */
             double coin_flip = rand_dbl(rand_gen);
             if (coin_flip < pe_prob) {
@@ -201,7 +205,7 @@ std::set<Triplet> Timepix::calculateSideProperties(Source s) {
       if (solid_angle == solid_angle) {  // NaN check
         double  apparent_activity = (s.getActivity() / 4 * M_PI) * solid_angle;
         Triplet triplet;
-        triplet.side_index = i;
+        triplet.side_index                = i;
         triplet.apparent_activity         = apparent_activity;
         triplet.diagnonal_absorption_prob = 0;  // TODO
         ret.insert(triplet);
@@ -227,12 +231,13 @@ void Timepix::buildSensorCuboid() {
   Eigen::Vector3d G(-size[0] / 2.0, -size[1] / 2.0, size[2] / 2.0);
   Eigen::Vector3d H(-size[0] / 2.0, size[1] / 2.0, size[2] / 2.0);
 
-  sides[FRONT]  = Rectangle(A, B, C, D);
-  sides[BACK]   = Rectangle(E, F, G, H);
-  sides[LEFT]   = Rectangle(B, E, H, C);
-  sides[RIGHT]  = Rectangle(F, A, D, G);
-  sides[BOTTOM] = Rectangle(F, E, B, A);
-  sides[TOP]    = Rectangle(D, C, H, G);
+  sides[FRONT]    = Rectangle(A, B, C, D);
+  sides[BACK]     = Rectangle(E, F, G, H);
+  sides[LEFT]     = Rectangle(B, E, H, C);
+  sides[RIGHT]    = Rectangle(F, A, D, G);
+  sides[BOTTOM]   = Rectangle(F, E, B, A);
+  sides[TOP]      = Rectangle(D, C, H, G);
+  diagonal_length = (C - F).norm();
 }
 //}
 
@@ -254,5 +259,28 @@ Eigen::Vector3d Timepix::sampleRectangle(Rectangle r) {
   double k2 = rand_dbl(rand_gen);
 
   return r.points[0] + k1 * r.basis.col(0) + k2 * r.basis.col(1);
+}
+//}
+
+/* photoabsorptionProbability //{*/
+double Timepix::photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density) {
+  return 1.0 - std::exp(-mass_att_coeff * material_thickness * 100 * material_density);  // multiply by 100 to get thickness in cm
+}
+//}
+
+/* getDensity //{ */
+double getDensity(std::string material) {
+  // TODO
+  // lookup nist table for density
+  return -1;
+}
+//}
+
+/* calculateMassAttCoeff //{ */
+double calculateMassAttCoeff(double photon_energy, double material_density) {
+  // TODO
+  // lookup nist table
+  // interpolate
+  return -1;
 }
 //}
