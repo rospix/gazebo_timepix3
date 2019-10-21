@@ -6,7 +6,10 @@
 // std libraries
 #include <algorithm>
 #include <boost/thread.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/algorithm/string.hpp>
 #include <eigen3/Eigen/Core>
+#include <fstream>
 
 // ros and gazebo libraries
 #include <gazebo/gazebo.hh>
@@ -93,6 +96,8 @@ private:
   BatchVisualizer bv;
 
   Eigen::Vector3d sampleRectangle(Rectangle r);
+
+  bool loadNistTable(std::string material, /* out */ std::ifstream &target_file);
 
   // RNG stuff
   std::mt19937                           rand_gen;

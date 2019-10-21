@@ -105,6 +105,7 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
   }
   ROS_INFO("[Timepix%u]: Newly registered RadiationSource%u", model_->GetId(), msg->id());
   Eigen::Vector3d source_world_pos(msg->x(), msg->y(), msg->z());
+  double          mass_att_coeff = calculateMassAttCoeff(msg->energy(), density);
   Source          s(msg->id(), msg->material(), msg->activity(), targetRelativePosition(model_->WorldPose(), source_world_pos));
   s.setSideProperties(calculateSideProperties(s));
   sources.push_back(s);
@@ -270,9 +271,41 @@ double Timepix::photoabsorptionProbability(double material_thickness, double mas
 
 /* getDensity //{ */
 double Timepix::getDensity(std::string material) {
-  // TODO
-  // lookup nist table for density
+  std::ifstream nist_file;
+
+  if (loadNistTable(material, nist_file)) {
+    std::string line;
+    getline(nist_file, line);
+    std::vector<std::string> line_elems;
+    boost::split(line_elems, line, [](char c) { return c == ','; });
+
+    if (line_elems.size() < 3) {
+      ROS_WARN("[Timepix%u]: Material properties not properly formatted. Expected 4 columns of data, got %ld", model_->GetId(), line_elems.size());
+    } else {
+      double material_density = std::stod(line_elems[3]);
+      ROS_INFO("[Timepix%u]: Material density: %.3f", model_->GetId(), material_density);
+      return material_density;
+    }
+
+  } else {
+    ROS_WARN("[Timepix%u]: Material properties not found", model_->GetId());
+  }
   return -1;
+}
+//}
+
+/* loadNistTable //{ */
+bool Timepix::loadNistTable(std::string material, /* out */ std::ifstream &target_file) {
+  std::stringstream ss;
+  auto              curr_path = boost::filesystem::current_path();
+  ss << curr_path.c_str() << "/../mrs_workspace/src/radiation_nodes/gazebo_timepix/nist/" << material.c_str() << ".csv";
+  target_file.open(ss.str().c_str());
+  if (target_file.is_open()) {
+    ROS_INFO("[Timepix%u]: Loaded NIST table \"%s.csv\"", model_->GetId(), material.c_str());
+    return true;
+  }
+  ROS_WARN("[Timepix%u]: Failed to open \"%s.csv\"", model_->GetId(), material.c_str());
+  return false;
 }
 //}
 
@@ -281,6 +314,7 @@ double Timepix::calculateMassAttCoeff(double photon_energy, double material_dens
   // TODO
   // lookup nist table
   // interpolate
+
   return -1;
 }
 //}
