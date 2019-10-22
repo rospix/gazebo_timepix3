@@ -36,9 +36,14 @@
 
 //}
 
-
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource> RadiationSourceConstPtr;
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::Termination>     TerminationConstPtr;
+
+enum AttenuationType
+{
+  PHOTOELECTRIC = 1,
+  ALL           = 2
+};
 
 namespace gazebo
 {
@@ -52,7 +57,7 @@ protected:
 
 private:
   ignition::math::Vector3d size;
-  std::string              material = "Si";
+  std::string              material = "si";
   std::stringstream        global_frame;
   std::stringstream        local_frame;
 
@@ -64,7 +69,7 @@ private:
 
   std::set<Triplet> calculateSideProperties(Source s);
   double            getDensity(std::string material);
-  double            calculateMassAttCoeff(double photon_energy, double material_density);
+  double            calculateMassAttCoeff(double photon_energy, AttenuationType a);
   double            photoabsorptionProbability(double material_thickness, double mass_att_coeff, double mat_density);
 
   double exposition_seconds = 1;
@@ -97,7 +102,7 @@ private:
 
   Eigen::Vector3d sampleRectangle(Rectangle r);
 
-  bool loadNistTable(std::string material, /* out */ std::ifstream &target_file);
+  std::vector<std::vector<std::string>> loadNistTable(std::string material);
 
   // RNG stuff
   std::mt19937                           rand_gen;

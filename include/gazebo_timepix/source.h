@@ -36,8 +36,9 @@ private:
   unsigned int gazebo_id;
   double       activity;
   double       energy;
+  double       mass_att_coeff;
   std::string  material;
-  double       timepix_photoabsorption_coeff;
+  double       diagonal_absorption_prob;
 
   Eigen::Vector3d   relative_position;
   std::set<Triplet> side_properties;
@@ -48,7 +49,8 @@ private:
 public:
   Source();
   ~Source();
-  Source(unsigned int gazebo_id, std::string material, double activity, Eigen::Vector3d relative_position);
+  Source(unsigned int gazebo_id, std::string material, double activity, double mass_att_coeff, double diagnonal_absorption_prob,
+         Eigen::Vector3d relative_position);
 
   bool operator==(Source const &s1) {
     return this->gazebo_id == s1.gazebo_id;
@@ -78,6 +80,10 @@ public:
     return energy;
   }
 
+  double getMassAttCoeff() {
+    return mass_att_coeff;
+  }
+
   Eigen::Vector3d getRelativePosition() {
     return relative_position;
   }
@@ -91,6 +97,10 @@ public:
 
   double getTimepixPhotoAbsorptionCoeff() {
     return timepix_photoabsorption_coeff;
+  }
+
+  double getTimepixDiagonalAbsorptionProb() {
+    return timepix_diagonal_absorption_prob;
   }
 
   void setTimepixPhotoAbsorptionCoeff(double timepix_photoabsorption_coeff) {
@@ -108,10 +118,11 @@ Source::Source() {
 Source::~Source() {
 }
 
-Source::Source(unsigned int gazebo_id, std::string material, double activity, Eigen::Vector3d relative_position) {
+Source::Source(unsigned int gazebo_id, std::string material, double activity, double mass_att_coeff, Eigen::Vector3d relative_position) {
   this->gazebo_id         = gazebo_id;
   this->material          = material;
   this->activity          = activity;
+  this->mass_att_coeff    = mass_att_coeff;
   this->relative_position = relative_position;
 }
 //}

@@ -105,8 +105,8 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
   }
   ROS_INFO("[Timepix%u]: Newly registered RadiationSource%u", model_->GetId(), msg->id());
   Eigen::Vector3d source_world_pos(msg->x(), msg->y(), msg->z());
-  double          mass_att_coeff = calculateMassAttCoeff(msg->energy(), density);
-  Source          s(msg->id(), msg->material(), msg->activity(), targetRelativePosition(model_->WorldPose(), source_world_pos));
+  double          mass_att_coeff = calculateMassAttCoeff(msg->energy(), PHOTOELECTRIC);
+  Source          s(msg->id(), msg->material(), msg->activity(), mass_att_coeff, targetRelativePosition(model_->WorldPose(), source_world_pos));
   s.setSideProperties(calculateSideProperties(s));
   sources.push_back(s);
 }
@@ -132,8 +132,6 @@ void Timepix::Simulate() {
     bv.addRay(Ray::twopointCast(Eigen::Vector3d::Zero(), s->getRelativePosition()), Eigen::Vector4d(0.3, 0.7, 0.9, 1.0));
     for (auto side_properties = s->getSideProperties().begin(); side_properties != s->getSideProperties().end(); side_properties++) {
 
-
-      std::cout << "Read: " << side_properties->side_index << "\n";
       int side_index = side_properties->side_index;
 
       bv.addRect(sides[side_index], GRAY);
@@ -151,7 +149,7 @@ void Timepix::Simulate() {
           double                           pe_prob;
           if (intersect2) {
             double track_length   = (intersect2.get() - intersect1).norm();
-            double mass_att_coeff = calculateMassAttCoeff(s->getEnergy(), density);
+            double mass_att_coeff = s->getMassAttCoeff();
             double diag_abs_prob  = photoabsorptionProbability(diagonal_length, mass_att_coeff, density);
             pe_prob               = photoabsorptionProbability(track_length, mass_att_coeff, density) / diag_abs_prob;
 
@@ -159,6 +157,7 @@ void Timepix::Simulate() {
             double coin_flip = rand_dbl(rand_gen);
             if (coin_flip < pe_prob) {
               bv.addRay(r, GREEN);
+              photons_captured++;
             } else {
               bv.addRay(r, ORANGE);
             }
@@ -168,7 +167,7 @@ void Timepix::Simulate() {
       }
     }
   }
-  /* std::cout << "-------------------------\n"; */
+  std::cout << "[Timepix]: Captured " << photons_captured << " photons\n";
 }
 //}
 
@@ -265,56 +264,86 @@ Eigen::Vector3d Timepix::sampleRectangle(Rectangle r) {
 
 /* photoabsorptionProbability //{*/
 double Timepix::photoabsorptionProbability(double material_thickness, double mass_att_coeff, double material_density) {
-  return 1.0 - std::exp(-mass_att_coeff * material_thickness * 100 * material_density);  // multiply by 100 to get thickness in cm
+  return 1.0 - std::exp(-mass_att_coeff * material_thickness * 100.0 * material_density);  // multiply by 100 to get thickness in cm
 }
 //}
 
 /* getDensity //{ */
 double Timepix::getDensity(std::string material) {
-  std::ifstream nist_file;
-
-  if (loadNistTable(material, nist_file)) {
-    std::string line;
-    getline(nist_file, line);
-    std::vector<std::string> line_elems;
-    boost::split(line_elems, line, [](char c) { return c == ','; });
-
-    if (line_elems.size() < 3) {
-      ROS_WARN("[Timepix%u]: Material properties not properly formatted. Expected 4 columns of data, got %ld", model_->GetId(), line_elems.size());
-    } else {
-      double material_density = std::stod(line_elems[3]);
-      ROS_INFO("[Timepix%u]: Material density: %.3f", model_->GetId(), material_density);
-      return material_density;
-    }
-
-  } else {
-    ROS_WARN("[Timepix%u]: Material properties not found", model_->GetId());
+  auto nist_table = loadNistTable(material);
+  if (nist_table.size() > 0) {
+    std::string density_str = nist_table[0][3];
+    return std::stod(density_str);
   }
+  ROS_WARN("[Timepix%u]: Material properties not found", model_->GetId());
   return -1;
-}
-//}
-
-/* loadNistTable //{ */
-bool Timepix::loadNistTable(std::string material, /* out */ std::ifstream &target_file) {
-  std::stringstream ss;
-  auto              curr_path = boost::filesystem::current_path();
-  ss << curr_path.c_str() << "/../mrs_workspace/src/radiation_nodes/gazebo_timepix/nist/" << material.c_str() << ".csv";
-  target_file.open(ss.str().c_str());
-  if (target_file.is_open()) {
-    ROS_INFO("[Timepix%u]: Loaded NIST table \"%s.csv\"", model_->GetId(), material.c_str());
-    return true;
-  }
-  ROS_WARN("[Timepix%u]: Failed to open \"%s.csv\"", model_->GetId(), material.c_str());
-  return false;
 }
 //}
 
 /* calculateMassAttCoeff //{ */
-double Timepix::calculateMassAttCoeff(double photon_energy, double material_density) {
-  // TODO
-  // lookup nist table
-  // interpolate
+double Timepix::calculateMassAttCoeff(double photon_energy, AttenuationType a) {
+  auto nist_table = loadNistTable(material);
 
-  return -1;
+  double mass_att_coeff = 0.0;
+  if (nist_table.size() > 0) {
+    for (size_t i = 1; i < nist_table.size(); i++) {
+
+      // lookup the NIST table
+      double table_energy = std::stod(nist_table[i][0]);
+      if (table_energy >= photon_energy) {
+        // perform linear interpolation between two closest table values
+        double lower_att_coeff  = std::stod(nist_table[i - 1][a]);
+        double higher_att_coeff = std::stod(nist_table[i][a]);
+        double lower_energy     = std::stod(nist_table[i - 1][0]);
+
+        double frac    = (photon_energy - lower_energy) / (table_energy - lower_energy);
+        mass_att_coeff = lower_att_coeff + (frac * (higher_att_coeff - lower_att_coeff));
+        break;
+      }
+    }
+  }
+  ROS_INFO("[Timepix%u]: Interpolated mass attenuation coefficient: %.4f", model_->GetId(), mass_att_coeff);
+  return mass_att_coeff;
 }
 //}
+
+/* loadNistTable //{ */
+std::vector<std::vector<std::string>> Timepix::loadNistTable(std::string material) {
+  std::vector<std::vector<std::string>> table;
+
+  std::stringstream ss;
+  auto              curr_path = boost::filesystem::current_path();
+  ss << curr_path.c_str() << "/../mrs_workspace/src/radiation_nodes/gazebo_timepix/nist/" << material.c_str() << ".csv";
+  std::ifstream nist_file;
+  nist_file.open(ss.str().c_str());
+  if (!nist_file.is_open()) {
+    ROS_WARN("[Timepix%u]: Failed to open \"%s.csv\"", model_->GetId(), material.c_str());
+    return table;
+  }
+  while (true) {
+    std::string line;
+    getline(nist_file, line);
+    std::vector<std::string> line_elems;
+    boost::split(line_elems, line, [](char c) { return c == ','; });
+    if (line_elems.size() < 3) {
+      if (table.size() < 1) {
+        ROS_WARN("[Timepix%u]: Material properties not properly formatted. Expected 4 columns of data, got %ld", model_->GetId(), line_elems.size());
+      }
+      break;
+    }
+    std::vector<std::string> line_slice(line_elems.begin(), line_elems.end() - 1);
+    table.push_back(line_slice);
+    /* std::cout << "adding line\n"; */
+  }
+  ROS_INFO("[Timepix%u]: Loaded NIST table \"%s.csv\"", model_->GetId(), material.c_str());
+  /* std::cout << "Table content:" << table.size() << "rows, " << table.begin()->size() << "cols\n"; */
+  /* for (auto r = table.begin(); r != table.end(); r++) { */
+  /*   for (auto c = r->begin(); c != r->end(); c++) { */
+  /*     std::cout << c->c_str() << ", "; */
+  /*   } */
+  /*   std::cout << std::endl; */
+  /* } */
+  return table;
+}
+//}
+
