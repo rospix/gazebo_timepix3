@@ -31,6 +31,9 @@
 #include <gazebo_rad_msgs/DebugSetActivity.h>
 #include <gazebo_rad_msgs/DebugSetMaterial.h>
 
+#include <gazebo_rad_msgs/TimepixDiagnostics.h>
+#include <gazebo_rad_msgs/SourceDiagnostics.h>
+
 #include <gazebo_rad_msgs/Termination.pb.h>
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
 
@@ -64,19 +67,21 @@ private:
   bool          terminated;
   boost::thread publisher_thread;
   void          PublisherLoop();
-  void          Simulate();
+  ros::Time     Simulate(ros::Time sim_start);
   void          buildSensorCuboid();
+  void          publishDiagnostics();
+  void          publishSensorMsg(int particle_count);
 
   std::set<Triplet> calculateSideProperties(Source s);
   double            getDensity(std::string material);
   double            calculateMassAttCoeff(double photon_energy, AttenuationType a);
   double            photoabsorptionProbability(double material_thickness, double mass_att_coeff, double mat_density);
 
-  double exposition_seconds = 1;
-  double density;
-  double diagonal_length;
+  double        exposition_seconds = 1.0;
+  ros::Duration exposition_duration;
+  double        density;
+  double        diagonal_length;
 
-  std::chrono::duration<double> exposition_duration;
 
   std::vector<Source>    sources;
   std::vector<Rectangle> sides;
@@ -96,7 +101,7 @@ private:
   void OnWorldUpdate(const common::UpdateInfo &upd);
 
   std::unique_ptr<ros::NodeHandle> ros_node;
-  ros::Publisher                   ros_publisher;
+  ros::Publisher                   ros_publisher, diagnostics_publisher;
 
   BatchVisualizer bv;
 

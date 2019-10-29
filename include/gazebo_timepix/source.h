@@ -49,7 +49,7 @@ private:
 public:
   Source();
   ~Source();
-  Source(unsigned int gazebo_id, std::string material, double activity, double mass_att_coeff, double diagnonal_absorption_prob,
+  Source(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff, double diagnonal_absorption_prob,
          Eigen::Vector3d relative_position);
 
   bool operator==(Source const &s1) {
@@ -91,20 +91,12 @@ public:
     return side_properties;
   }
 
+  double getDiagonalAbsorptionProb() {
+    return diagonal_absorption_prob;
+  }
+
   void setSideProperties(std::set<Triplet> side_properties) {
     this->side_properties = side_properties;
-  }
-
-  double getTimepixPhotoAbsorptionCoeff() {
-    return timepix_photoabsorption_coeff;
-  }
-
-  double getTimepixDiagonalAbsorptionProb() {
-    return timepix_diagonal_absorption_prob;
-  }
-
-  void setTimepixPhotoAbsorptionCoeff(double timepix_photoabsorption_coeff) {
-    this->timepix_photoabsorption_coeff = timepix_photoabsorption_coeff;
   }
 
   void setRelativePosition(Eigen::Vector3d relative_position) {
@@ -118,12 +110,15 @@ Source::Source() {
 Source::~Source() {
 }
 
-Source::Source(unsigned int gazebo_id, std::string material, double activity, double mass_att_coeff, Eigen::Vector3d relative_position) {
-  this->gazebo_id         = gazebo_id;
-  this->material          = material;
-  this->activity          = activity;
-  this->mass_att_coeff    = mass_att_coeff;
-  this->relative_position = relative_position;
+Source::Source(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff, double diagonal_absorption_prob,
+               Eigen::Vector3d relative_position) {
+  this->gazebo_id                = gazebo_id;
+  this->material                 = material;
+  this->activity                 = activity;
+  this->energy                   = energy;
+  this->mass_att_coeff           = mass_att_coeff;
+  this->diagonal_absorption_prob = diagonal_absorption_prob;
+  this->relative_position        = relative_position;
 }
 //}
 

@@ -41,18 +41,19 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   if (_sdf->HasElement("material")) {
     material = _sdf->Get<std::string>("material");
   } else {
-    ROS_WARN("[RadiationSource%u]: parameter 'material' was not specified", model_->GetId());
+    ROS_WARN("[Timepix%u]: parameter 'material' was not specified", model_->GetId());
   }
   if (_sdf->HasElement("size")) {
     size = _sdf->Get<ignition::math::Vector3d>("size");
   } else {
-    ROS_WARN("[RadiationSource%u]: parameter 'size' was not specified", model_->GetId());
+    ROS_WARN("[Timepix%u]: parameter 'size' was not specified", model_->GetId());
   }
+  std::chrono::duration<double> exposition_duration;
   if (_sdf->HasElement("exposition_time")) {
-    exposition_seconds  = _sdf->Get<double>("exposition_time");
-    exposition_duration = std::chrono::duration<double>(exposition_seconds);
+    exposition_seconds = _sdf->Get<double>("exposition_time");
+    /* exposition_duration = ros::Duration(exposition_seconds); */
   } else {
-    ROS_WARN("[RadiationSource%u]: parameter 'publish_rate' was not specified", model_->GetId());
+    ROS_WARN("[Timepix%u]: parameter 'publish_rate' was not specified", model_->GetId());
   }
   //}
 
@@ -82,7 +83,8 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   termination_sub = gazebo_node_->Subscribe("~/radiation/termination", &Timepix::terminationCallback, this, 1);
 
   // ros communication
-  ros_publisher = ros_node->advertise<gazebo_rad_msgs::Timepix>("/radiation/timepix", 1);
+  ros_publisher         = ros_node->advertise<gazebo_rad_msgs::Timepix>("/radiation/timepix", 1);
+  diagnostics_publisher = ros_node->advertise<gazebo_rad_msgs::TimepixDiagnostics>("/radiation/diagnostics", 1);
 
   terminated       = false;
   publisher_thread = boost::thread(boost::bind(&Timepix::PublisherLoop, this));
@@ -105,8 +107,11 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
   }
   ROS_INFO("[Timepix%u]: Newly registered RadiationSource%u", model_->GetId(), msg->id());
   Eigen::Vector3d source_world_pos(msg->x(), msg->y(), msg->z());
-  double          mass_att_coeff = calculateMassAttCoeff(msg->energy(), PHOTOELECTRIC);
-  Source          s(msg->id(), msg->material(), msg->activity(), mass_att_coeff, targetRelativePosition(model_->WorldPose(), source_world_pos));
+
+  double mass_att_coeff            = calculateMassAttCoeff(msg->energy(), PHOTOELECTRIC);
+  double diagnonal_absorption_prob = photoabsorptionProbability(diagonal_length, mass_att_coeff, density);
+  Source s(msg->id(), msg->material(), msg->activity(), msg->energy(), mass_att_coeff, diagnonal_absorption_prob,
+           targetRelativePosition(model_->WorldPose(), source_world_pos));
   s.setSideProperties(calculateSideProperties(s));
   sources.push_back(s);
 }
@@ -121,10 +126,10 @@ void Timepix::terminationCallback(TerminationConstPtr &msg) {
 //}
 
 /* Simulate //{ */
-void Timepix::Simulate() {
-  int required_photon_count = 0;
-  int photons_captured      = 0;
-  /* std::cout << "-------------------------\n"; */
+ros::Time Timepix::Simulate(ros::Time sim_start) {
+  int photons_captured = 0;
+  int rays_cast        = 0;
+
   for (auto s = sources.begin(); s != sources.end(); s++) {
     // TODO obstacle attenuation
 
@@ -135,12 +140,21 @@ void Timepix::Simulate() {
       int side_index = side_properties->side_index;
 
       bv.addRect(sides[side_index], GRAY);
-      int samples = (int)(side_properties->apparent_activity * exposition_seconds);
-      /* std::cout << "[Dosimeter]: for side " << side->first << " with app activity " << side->second << " simulated " << samples << " samples\n"; */
+      int samples = (int)(side_properties->apparent_activity * exposition_seconds * s->getDiagonalAbsorptionProb());
+      /* //{ */
       for (int n = 0; n < samples; n++) {
+        ros::Time curr_time = ros::Time::now();
+        auto      time_diff = (curr_time - sim_start).toSec();
+        if (time_diff >= exposition_seconds) {
+          ROS_WARN("[Timepix%u]: Time slip detected. Simulation incomplete", model_->GetId());
+          publishSensorMsg(photons_captured);
+          return ros::Time::now();
+        }
+
         Eigen::Vector3d intersect1 = sampleRectangle(sides[side_index]);
 
         Ray r = Ray::twopointCast(s->getRelativePosition(), intersect1);
+        rays_cast++;
         for (int j = 0; j < 6; j++) {
           if (j == side_index) {
             continue;
@@ -150,8 +164,7 @@ void Timepix::Simulate() {
           if (intersect2) {
             double track_length   = (intersect2.get() - intersect1).norm();
             double mass_att_coeff = s->getMassAttCoeff();
-            double diag_abs_prob  = photoabsorptionProbability(diagonal_length, mass_att_coeff, density);
-            pe_prob               = photoabsorptionProbability(track_length, mass_att_coeff, density) / diag_abs_prob;
+            pe_prob               = photoabsorptionProbability(track_length, mass_att_coeff, density) / s->getDiagonalAbsorptionProb();
 
             /* std::cout << "pe_prob: " << (pe_prob * 100) << "\%\n"; */
             double coin_flip = rand_dbl(rand_gen);
@@ -165,33 +178,47 @@ void Timepix::Simulate() {
           }
         }
       }
+      //}
     }
   }
-  std::cout << "[Timepix]: Captured " << photons_captured << " photons\n";
+  /* auto sim_end      = ros::Time::now(); */
+  /* auto sim_duration = (sim_end - sim_start).toSec(); */
+  /* std::cout << "simulation duration: " << (1000 * sim_duration) << " ms\n"; */
+  /* ROS_INFO("[Timepix%u]: Rays cast: %d, Capture percentage: %.3f%, Simulation speed: %.3f rays/sec", model_->GetId(), rays_cast, */
+  /* (100.0 * photons_captured) / rays_cast, rays_cast / sim_duration_sec.count()); */
+  publishSensorMsg(photons_captured);
+  return ros::Time::now();
 }
 //}
 
 /* PublisherLoop //{ */
 void Timepix::PublisherLoop() {
   while (!terminated) {
+    auto sim_start = ros::Time::now();
     bv.clear();
-    Simulate();
+    auto sim_end = Simulate(sim_start);
 
-    /* ROS message (debug) //{ */
-    gazebo_rad_msgs::Timepix debug_msg;
-    debug_msg.material = material;
-    debug_msg.exposure = exposition_seconds;
-    debug_msg.count    = 0;
-    debug_msg.id       = model_->GetId();
-    debug_msg.size.x   = size[0];
-    debug_msg.size.y   = size[1];
-    debug_msg.size.z   = size[2];
-    debug_msg.stamp    = ros::Time::now();
-    ros_publisher.publish(debug_msg);
-    bv.publish();
+    /* /1* RVIZ visualization (ROS message) //{ *1/ */
+    /* gazebo_rad_msgs::Timepix debug_msg; */
+    /* debug_msg.material = material; */
+    /* debug_msg.exposure = exposition_seconds; */
+    /* debug_msg.count    = 0; */
+    /* debug_msg.id       = model_->GetId(); */
+    /* debug_msg.size.x   = size[0]; */
+    /* debug_msg.size.y   = size[1]; */
+    /* debug_msg.size.z   = size[2]; */
+    /* debug_msg.stamp    = ros::Time::now(); */
+    /* ros_publisher.publish(debug_msg); */
+    /* bv.publish(); */
+    /* //} */
+
+    /* diagnostics (ROS message) //{ */
+    publishDiagnostics();
     //}
 
-    std::this_thread::sleep_for(exposition_duration);
+    auto sim_duration = sim_end - sim_start;
+    (ros::Duration(exposition_seconds) - sim_duration).sleep();
+    /* std::this_thread::sleep_for(exposition_duration - sim_duration); */
   }
 }
 //}
@@ -207,7 +234,7 @@ std::set<Triplet> Timepix::calculateSideProperties(Source s) {
         Triplet triplet;
         triplet.side_index                = i;
         triplet.apparent_activity         = apparent_activity;
-        triplet.diagnonal_absorption_prob = 0;  // TODO
+        triplet.diagnonal_absorption_prob = photoabsorptionProbability(diagonal_length, s.getMassAttCoeff(), density);
         ret.insert(triplet);
       }
     }
@@ -347,3 +374,74 @@ std::vector<std::vector<std::string>> Timepix::loadNistTable(std::string materia
 }
 //}
 
+/* publishSensorMsg //{ */
+void Timepix::publishSensorMsg(int particle_count) {
+  gazebo_rad_msgs::Timepix msg;
+  msg.stamp    = ros::Time::now();
+  msg.id       = model_->GetId();
+  msg.material = material;
+  msg.size.x   = size.X();
+  msg.size.y   = size.Y();
+  msg.size.z   = size.Z();
+  msg.exposure = exposition_seconds;
+  msg.count    = particle_count;
+
+  ros_publisher.publish(msg);
+}
+//}
+
+/* publishDiagnostics //{ */
+void Timepix::publishDiagnostics() {
+
+  gazebo_rad_msgs::TimepixDiagnostics msg;
+  msg.stamp           = ros::Time::now();
+  msg.id              = model_->GetId();
+  msg.exposition_time = exposition_seconds;
+  msg.material        = material;
+  msg.size.x          = size.X();
+  msg.size.y          = size.Y();
+  msg.size.z          = size.Z();
+  msg.world_pos.x     = model_->WorldPose().Pos().X();
+  msg.world_pos.y     = model_->WorldPose().Pos().Y();
+  msg.world_pos.z     = model_->WorldPose().Pos().Z();
+  msg.world_rot.w     = model_->WorldPose().Rot().W();
+  msg.world_rot.x     = model_->WorldPose().Rot().X();
+  msg.world_rot.y     = model_->WorldPose().Rot().Y();
+  msg.world_rot.z     = model_->WorldPose().Rot().Z();
+
+  /* add sources //{ */
+  for (auto s = sources.begin(); s != sources.end(); s++) {
+    gazebo_rad_msgs::SourceDiagnostics sd;
+    sd.id             = s->getId();
+    sd.activity       = s->getActivity();
+    sd.energy         = s->getEnergy();
+    sd.material       = s->getMaterial();
+    sd.relative_pos.x = s->getRelativePosition().x();
+    sd.relative_pos.y = s->getRelativePosition().y();
+    sd.relative_pos.z = s->getRelativePosition().z();
+
+    int i = 0;
+    for (auto sides = s->getSideProperties().begin(); sides != s->getSideProperties().end(); sides++) {
+      if (i == 0) {
+        sd.exposed_sides.x       = sides->side_index;
+        sd.apparent_activities.x = sides->apparent_activity;
+      } else if (i == 1) {
+        sd.exposed_sides.y       = sides->side_index;
+        sd.apparent_activities.y = sides->apparent_activity;
+      } else {
+        sd.exposed_sides.z       = sides->side_index;
+        sd.apparent_activities.z = sides->apparent_activity;
+      }
+      i++;
+    }
+    msg.sources.push_back(sd);
+  }
+  //}
+
+  /* add obstacles //{ */
+  // TODO
+  //}
+
+  diagnostics_publisher.publish(msg);
+}
+//}
