@@ -24,6 +24,7 @@ struct Triplet
   bool operator<(const Triplet &t) const {
     return side_index < t.side_index;
   }
+
   bool operator==(const Triplet &t) const {
     return side_index == t.side_index;
   }
@@ -87,6 +88,7 @@ public:
   Eigen::Vector3d getRelativePosition() {
     return relative_position;
   }
+
   std::set<Triplet> getSideProperties() {
     return side_properties;
   }

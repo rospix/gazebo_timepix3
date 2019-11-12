@@ -23,6 +23,7 @@
 
 // package libraries
 #include <gazebo_timepix/source.h>
+#include <gazebo_timepix/obstacle.h>
 #include <gazebo_timepix/geometry_utils.h>
 #include <gazebo_timepix/visual_utils.h>
 
@@ -36,11 +37,13 @@
 
 #include <gazebo_rad_msgs/Termination.pb.h>
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
+#include <gazebo_rad_msgs/RadiationObstacle.pb.h>
 
 //}
 
-typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource> RadiationSourceConstPtr;
-typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::Termination>     TerminationConstPtr;
+typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource>   RadiationSourceConstPtr;
+typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationObstacle> RadiationObstacleConstPtr;
+typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::Termination>       TerminationConstPtr;
 
 enum AttenuationType
 {
@@ -84,6 +87,7 @@ private:
 
 
   std::vector<Source>    sources;
+  std::vector<Obstacle>  obstacles;
   std::vector<Rectangle> sides;
 
   physics::ModelPtr       model_;
@@ -91,14 +95,16 @@ private:
   transport::PublisherPtr gazebo_publisher_;
 
   transport::SubscriberPtr sources_sub;
+  transport::SubscriberPtr obstacles_sub;
   transport::SubscriberPtr termination_sub;
   tf::TransformBroadcaster transform_broadcaster;
 
   event::ConnectionPtr updateConnection_;
 
   void sourcesCallback(RadiationSourceConstPtr &msg);
+  void obstaclesCallback(RadiationObstacleConstPtr &msg);
   void terminationCallback(TerminationConstPtr &msg);
-  void OnWorldUpdate(const common::UpdateInfo &upd);
+  void onWorldUpdate(const common::UpdateInfo &upd);
 
   std::unique_ptr<ros::NodeHandle> ros_node;
   ros::Publisher                   ros_publisher, diagnostics_publisher;

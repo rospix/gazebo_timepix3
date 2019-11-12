@@ -316,6 +316,10 @@ Eigen::Vector3d targetRelativePosition(ignition::math::Pose3d my_pose, Eigen::Ve
   return world2local * (target_pos - my_world_pos);
 }
 
+ignition::math::Pose3d targetRelativePose(ignition::math::Pose3d my_pose, ignition::math::Pose3d target_pose) {
+  return target_pose - my_pose;
+}
+
 Rectangle move(Rectangle r, Eigen::Vector3d translation, Eigen::Quaterniond rotation) {
   Rectangle ret;
   for (int i = 0; i < 4; i++) {

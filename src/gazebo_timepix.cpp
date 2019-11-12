@@ -12,6 +12,7 @@
 #define GREEN Eigen::Vector4d(0.3, 1.0, 0.3, 1.0)
 #define BLUE Eigen::Vector4d(0.2, 0.2, 1.0, 1.0)
 #define GRAY Eigen::Vector4d(0.7, 0.7, 0.7, 1.0)
+#define BROWN Eigen::Vector4d(0.3, 0.2, 0.0, 1.0)
 
 using namespace gazebo;
 
@@ -20,6 +21,7 @@ Timepix::~Timepix() {
 
   // shutdown subscribers
   sources_sub->Unsubscribe();
+  obstacles_sub->Unsubscribe();
   termination_sub->Unsubscribe();
 
   // inform other gazebo nodes
@@ -76,10 +78,11 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   ros::init(argc, argv, "gazebo_timepix", ros::init_options::NoSigintHandler);
   ros_node.reset(new ros::NodeHandle("~"));
 
-  updateConnection_ = event::Events::ConnectWorldUpdateBegin(boost::bind(&Timepix::OnWorldUpdate, this, _1));
+  updateConnection_ = event::Events::ConnectWorldUpdateBegin(boost::bind(&Timepix::onWorldUpdate, this, _1));
 
   // gazebo communication
   sources_sub     = gazebo_node_->Subscribe("~/radiation/sources", &Timepix::sourcesCallback, this, 1);
+  obstacles_sub   = gazebo_node_->Subscribe("~/radiation/obstacles", &Timepix::obstaclesCallback, this, 1);
   termination_sub = gazebo_node_->Subscribe("~/radiation/termination", &Timepix::terminationCallback, this, 1);
 
   // ros communication
@@ -117,11 +120,66 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
 }
 //}
 
+/* obstaclesCallback //{ */
+void Timepix::obstaclesCallback(RadiationObstacleConstPtr &msg) {
+  for (auto it = obstacles.begin(); it != obstacles.end(); it++) {
+    if (it->getId() == msg->id()) {
+      ignition::math::Pose3d obstacle_pose;
+      obstacle_pose.Pos().X() = msg->pos_x();
+      obstacle_pose.Pos().Y() = msg->pos_y();
+      obstacle_pose.Pos().Z() = msg->pos_z();
+      obstacle_pose.Rot().W() = msg->ori_w();
+      obstacle_pose.Rot().X() = msg->ori_x();
+      obstacle_pose.Rot().Y() = msg->ori_y();
+      obstacle_pose.Rot().Z() = msg->ori_z();
+
+      ignition::math::Pose3d relative_pose = obstacle_pose - model_->WorldPose();
+      Eigen::Vector3d        relative_pos(relative_pose.Pos().X(), relative_pose.Pos().Y(), relative_pose.Pos().Z());
+      Eigen::Quaterniond     relative_rot(relative_pose.Rot().W(), relative_pose.Rot().X(), relative_pose.Rot().Y(), relative_pose.Rot().Z());
+      it->setRelativePosition(relative_pos);
+      it->setRelativeOrientation(relative_rot);
+      return;
+    }
+  }
+  ROS_INFO("[Timepix%u]: Newly registered RadiationObstacle%u", model_->GetId(), msg->id());
+
+  ignition::math::Pose3d timepix_world_pose = model_->WorldPose();
+  ignition::math::Pose3d obstacle_world_pose;
+
+  obstacle_world_pose.Pos().X() = msg->pos_x();
+  obstacle_world_pose.Pos().Y() = msg->pos_y();
+  obstacle_world_pose.Pos().Z() = msg->pos_z();
+  obstacle_world_pose.Rot().X() = msg->ori_x();
+  obstacle_world_pose.Rot().Y() = msg->ori_y();
+  obstacle_world_pose.Rot().Z() = msg->ori_z();
+  obstacle_world_pose.Rot().W() = msg->ori_w();
+
+  ignition::math::Pose3d relative_pose = obstacle_world_pose - timepix_world_pose;
+
+  Eigen::Vector3d    obstacle_size(msg->size_x(), msg->size_y(), msg->size_z());
+  Eigen::Vector3d    relative_pos(relative_pose.Pos().X(), relative_pose.Pos().Y(), relative_pose.Pos().Z());
+  Eigen::Quaterniond relative_ori(relative_pose.Rot().W(), relative_pose.Rot().X(), relative_pose.Rot().Y(), relative_pose.Rot().Z());
+
+  Obstacle o(msg->id(), msg->material(), relative_pos, relative_ori, obstacle_size);
+  obstacles.push_back(o);
+}
+
+//}
+
 /* terminateCallback //{ */
 void Timepix::terminationCallback(TerminationConstPtr &msg) {
-  ROS_INFO("[Timepix%u]: No longer tracking RadiationSource%u", model_->GetId(), msg->id());
-  std::vector<Source>::iterator it = remove(sources.begin(), sources.end(), msg->id());
-  sources.erase(it, sources.end());
+  size_t sources_count = sources.size();
+  sources.erase(std::remove(sources.begin(), sources.end(), msg->id()), sources.end());
+  if (sources.size() != sources_count) {
+    ROS_INFO("[Timepix%u]: No longer tracking RadiationSource%u", model_->GetId(), msg->id());
+    return;
+  }
+  size_t obstacles_count = obstacles.size();
+  obstacles.erase(std::remove(obstacles.begin(), obstacles.end(), msg->id()), obstacles.end());
+  if (obstacles_count != obstacles.size()) {
+    ROS_INFO("[Timepix%u]: No longer tracking RadiationObstacle%u", model_->GetId(), msg->id());
+    return;
+  }
 }
 //}
 
@@ -129,6 +187,10 @@ void Timepix::terminationCallback(TerminationConstPtr &msg) {
 ros::Time Timepix::Simulate(ros::Time sim_start) {
   int photons_captured = 0;
   int rays_cast        = 0;
+
+  for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
+    bv.addCuboid(o->getRelativePosition(), o->getRelativeOrientation(), o->getSize(), BROWN);
+  }
 
   for (auto s = sources.begin(); s != sources.end(); s++) {
     // TODO obstacle attenuation
@@ -198,19 +260,19 @@ void Timepix::PublisherLoop() {
     bv.clear();
     auto sim_end = Simulate(sim_start);
 
-    /* /1* RVIZ visualization (ROS message) //{ *1/ */
-    /* gazebo_rad_msgs::Timepix debug_msg; */
-    /* debug_msg.material = material; */
-    /* debug_msg.exposure = exposition_seconds; */
-    /* debug_msg.count    = 0; */
-    /* debug_msg.id       = model_->GetId(); */
-    /* debug_msg.size.x   = size[0]; */
-    /* debug_msg.size.y   = size[1]; */
-    /* debug_msg.size.z   = size[2]; */
-    /* debug_msg.stamp    = ros::Time::now(); */
-    /* ros_publisher.publish(debug_msg); */
-    /* bv.publish(); */
-    /* //} */
+    /* RVIZ visualization (ROS message) //{ */
+    gazebo_rad_msgs::Timepix debug_msg;
+    debug_msg.material = material;
+    debug_msg.exposure = exposition_seconds;
+    debug_msg.count    = 0;
+    debug_msg.id       = model_->GetId();
+    debug_msg.size.x   = size[0];
+    debug_msg.size.y   = size[1];
+    debug_msg.size.z   = size[2];
+    debug_msg.stamp    = ros::Time::now();
+    ros_publisher.publish(debug_msg);
+    bv.publish();
+    //}
 
     /* diagnostics (ROS message) //{ */
     publishDiagnostics();
@@ -268,8 +330,8 @@ void Timepix::buildSensorCuboid() {
 }
 //}
 
-/* OnWorldUpdate //{ */
-void Timepix::OnWorldUpdate(const common::UpdateInfo &upd) {
+/* onWorldUpdate //{ */
+void Timepix::onWorldUpdate(const common::UpdateInfo &upd) {
   tf::Transform  transform;
   tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
   tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
@@ -439,7 +501,22 @@ void Timepix::publishDiagnostics() {
   //}
 
   /* add obstacles //{ */
-  // TODO
+  for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
+    gazebo_rad_msgs::ObstacleDiagnostics od;
+    od.id             = o->getId();
+    od.material       = o->getMaterial();
+    od.relative_pos.x = o->getRelativePosition().x();
+    od.relative_pos.y = o->getRelativePosition().y();
+    od.relative_pos.z = o->getRelativePosition().z();
+    od.relative_rot.w = o->getRelativeOrientation().w();
+    od.relative_rot.x = o->getRelativeOrientation().x();
+    od.relative_rot.y = o->getRelativeOrientation().y();
+    od.relative_rot.z = o->getRelativeOrientation().z();
+    od.size.x         = o->getSize().x();
+    od.size.y         = o->getSize().y();
+    od.size.z         = o->getSize().z();
+    msg.obstacles.push_back(od);
+  }
   //}
 
   diagnostics_publisher.publish(msg);
