@@ -6,7 +6,7 @@
 #include <chrono>
 #include <vector>
 #include <eigen3/Eigen/Core>
-#include <geometry_visual_utils/geometry_utils.h>
+#include <geometry_visual_utils/radiation_geometry_utils.h>
 #include <ros/time.h>
 #include <materials.h>
 

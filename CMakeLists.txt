@@ -30,7 +30,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GAZEBO_CXX_FLAGS}")
 
 catkin_package(
   INCLUDE_DIRS include
-  DEPENDS Eigen roscpp gazebo_ros gazebo_rad_msgs geometry_visual_utils
+  DEPENDS Eigen roscpp gazebo_ros gazebo_rad_msgs
+  CATKIN_DEPENDS roscpp geometry_visual_utils
   )
 
 include_directories(
