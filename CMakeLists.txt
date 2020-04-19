@@ -9,7 +9,7 @@ find_package(catkin REQUIRED
   gazebo_ros
   radiation_utils
   gazebo_rad_msgs
-)
+  )
 
 # include Eigen3
 find_package(Eigen3 REQUIRED)
@@ -20,40 +20,25 @@ find_package(gazebo REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-  DEPENDS gazebo_ros gazebo_rad_msgs
-  CATKIN_DEPENDS roscpp std_msgs 
-)
+  DEPENDS gazebo_ros gazebo_rad_msgs radiation_utils
+  CATKIN_DEPENDS roscpp std_msgs
+  # LIBRARIES radiation_utils
+  )
 
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${GAZEBO_INCLUDE_DIRS}
-)
-
-add_library(${PROJECT_NAME} SHARED
-  src/timepix.cpp
-  src/data_utils.cpp
-  # src/${PROJECT_NAME}.cpp
   )
 
-target_link_libraries(${PROJECT_NAME}
-  ${GAZEBO_LIBRARIES}
-  ${catkin_LIBRARIES}
-  )
+add_library(data_utils SHARED src/data_utils.cpp)
+target_link_libraries(data_utils ${catkin_LIBRARIES})
 
-add_dependencies(
-  ${PROJECT_NAME}
-  ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-  ${catkin_EXPORTED_TARGETS}
-  )
+link_directories(${GAZEBO_LIBRARY_DIRS})
 
-add_executable(timepix_test
-  src/dummy_test.cpp
-  )
+add_library(gazebo_timepix SHARED src/gazebo_timepix.cpp)
+target_link_libraries(gazebo_timepix data_utils ${catkin_LIBRARIES})
+add_dependencies(gazebo_timepix ${catkin_EXPORTED_TARGETS})
 
-target_link_libraries(timepix_test
-  ${PROJECT_NAME}
-  ${GAZEBO_LIBRARIES}
-  ${catkin_LIBRARIES}
-  )
-
+# add_executable(timepix_test src/dummy_test.cpp)
+# target_link_libraries(timepix_test timepix data_utils ${catkin_LIBRARIES})

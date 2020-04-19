@@ -1,12 +1,9 @@
 #ifndef RADIATION_UTILS_SOURCE_H
 #define RADIATION_UTILS_SOURCE_H
 
-#include <eigen3/Eigen/Core>
-#include <iostream>
-#include <set>
 #include <string>
-#include <utility>
 #include <vector>
+#include <eigen3/Eigen/Core>
 
 /* This library provides wrapper objects for the 3D objects interacting with the simulated radiation */
 
@@ -31,8 +28,8 @@ struct Triplet
 };
 //}
 
-/* Source //{ */
-class Source {
+/* SourceAbstraction //{ */
+class SourceAbstraction {
 private:
   unsigned int gazebo_id;
   double       activity;
@@ -41,19 +38,19 @@ private:
   std::string  material;
   double       diagonal_absorption_prob;
 
-  Eigen::Vector3d   relative_position;
-  std::set<Triplet> side_properties;
+  Eigen::Vector3d      relative_position;
+  std::vector<Triplet> side_properties;
   // int - indices for exposed Timepix sides
   // double - apparent activity for corresponding sides
   // double - timepix_diagonal_absorption_probability (normalization constant)
 
 public:
-  Source();
-  ~Source();
-  Source(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff, double diagnonal_absorption_prob,
-         Eigen::Vector3d relative_position);
+  SourceAbstraction();
+  ~SourceAbstraction();
+  SourceAbstraction(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff, double diagnonal_absorption_prob,
+                    Eigen::Vector3d relative_position);
 
-  bool operator==(Source const &s1) {
+  bool operator==(SourceAbstraction const &s1) {
     return this->gazebo_id == s1.gazebo_id;
   }
 
@@ -89,7 +86,7 @@ public:
     return relative_position;
   }
 
-  std::set<Triplet> getSideProperties() {
+  std::vector<Triplet> getSideProperties() {
     return side_properties;
   }
 
@@ -97,7 +94,7 @@ public:
     return diagonal_absorption_prob;
   }
 
-  void setSideProperties(std::set<Triplet> side_properties) {
+  void setSideProperties(std::vector<Triplet> side_properties) {
     this->side_properties = side_properties;
   }
 
@@ -106,14 +103,14 @@ public:
   }
 };
 
-Source::Source() {
+SourceAbstraction::SourceAbstraction() {
 }
 
-Source::~Source() {
+SourceAbstraction::~SourceAbstraction() {
 }
 
-Source::Source(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff, double diagonal_absorption_prob,
-               Eigen::Vector3d relative_position) {
+SourceAbstraction::SourceAbstraction(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff,
+                                     double diagonal_absorption_prob, Eigen::Vector3d relative_position) {
   this->gazebo_id                = gazebo_id;
   this->material                 = material;
   this->activity                 = activity;

@@ -22,10 +22,11 @@
 #include <tf/transform_broadcaster.h>
 
 // package libraries
-#include <gazebo_timepix/source.h>
-#include <gazebo_timepix/obstacle.h>
-#include <gazebo_timepix/geometry_utils.h>
-#include <gazebo_timepix/visual_utils.h>
+#include <gazebo_timepix/source_abstraction.h>
+#include <gazebo_timepix/obstacle_abstraction.h>
+
+#include <radiation_utils/geometry.h>
+#include <radiation_utils/batch_visualizer.h>
 
 // ros and gazebo messages
 #include <gazebo_rad_msgs/Timepix.h>
@@ -44,12 +45,6 @@
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource>   RadiationSourceConstPtr;
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationObstacle> RadiationObstacleConstPtr;
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::Termination>       TerminationConstPtr;
-
-enum AttenuationType
-{
-  PHOTOELECTRIC = 1,
-  ALL           = 2
-};
 
 namespace gazebo
 {
@@ -75,28 +70,22 @@ private:
   void          publishDiagnostics();
   void          publishSensorMsg(int particle_count);
 
-  std::set<Triplet> calculateSideProperties(Source s);
-  double            getDensity(std::string material);
-  double            calculateMassAttCoeff(double photon_energy, AttenuationType a);
-  double            photoabsorptionProbability(double material_thickness, double mass_att_coeff, double mat_density);
+  /* std::set<Triplet> calculateSideProperties(SourceAbstraction s); */
 
   double        exposition_seconds = 1.0;
-  ros::Duration exposition_duration;
   double        density;
   double        diagonal_length;
 
 
-  std::vector<Source>    sources;
-  std::vector<Obstacle>  obstacles;
-  std::vector<Rectangle> sides;
+  std::vector<SourceAbstraction>   sources;
+  std::vector<ObstacleAbstraction> obstacles;
+  std::vector<Rectangle>           sides;
 
   physics::ModelPtr       model_;
   transport::NodePtr      gazebo_node_;
   transport::PublisherPtr gazebo_publisher_;
 
-  transport::SubscriberPtr sources_sub;
-  transport::SubscriberPtr obstacles_sub;
-  transport::SubscriberPtr termination_sub;
+  transport::SubscriberPtr sources_sub, obstacles_sub, termination_sub;
   tf::TransformBroadcaster transform_broadcaster;
 
   event::ConnectionPtr updateConnection_;
@@ -106,14 +95,12 @@ private:
   void terminationCallback(TerminationConstPtr &msg);
   void onWorldUpdate(const common::UpdateInfo &upd);
 
-  std::unique_ptr<ros::NodeHandle> ros_node;
-  ros::Publisher                   ros_publisher, diagnostics_publisher;
+  ros::NodeHandle ros_node;
+  ros::Publisher   ros_publisher, diagnostics_publisher;
 
   BatchVisualizer bv;
 
   Eigen::Vector3d sampleRectangle(Rectangle r);
-
-  std::vector<std::vector<std::string>> loadNistTable(std::string material);
 
   // RNG stuff
   std::mt19937                           rand_gen;
@@ -124,5 +111,25 @@ GZ_REGISTER_MODEL_PLUGIN(Timepix)
 Timepix::Timepix() : ModelPlugin() {
 }
 }  // namespace gazebo
+
+/* targetRelativePosition //{ */
+Eigen::Vector3d targetRelativePosition(ignition::math::Pose3d my_pose, Eigen::Vector3d target_pos) {
+
+  ignition::math::Vector3d    p = my_pose.Pos();
+  ignition::math::Quaterniond q = my_pose.Rot();
+
+  Eigen::Vector3d    my_world_pos(p.X(), p.Y(), p.Z());
+  Eigen::Quaterniond local2world = Eigen::Quaterniond(q.W(), q.X(), q.Y(), q.Z());
+  Eigen::Quaterniond world2local = local2world.inverse();
+
+  return world2local * (target_pos - my_world_pos);
+}
+//}
+
+/* targetRelativePose //{ */
+ignition::math::Pose3d targetRelativePose(ignition::math::Pose3d my_pose, ignition::math::Pose3d target_pose) {
+  return target_pose - my_pose;
+}
+//}
 
 #endif /* GAZEBO_RAD_SOURCE_H */
