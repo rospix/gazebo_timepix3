@@ -10,6 +10,7 @@
 #include <boost/algorithm/string.hpp>
 #include <eigen3/Eigen/Core>
 #include <fstream>
+#include <mutex>
 
 // ros and gazebo libraries
 #include <gazebo/gazebo.hh>
@@ -68,14 +69,18 @@ private:
   ros::Time     Simulate(ros::Time sim_start);
   void          buildSensorCuboid();
   void          publishDiagnostics();
+  void          debugVisualize();
   void          publishSensorMsg(int particle_count);
 
-  /* std::set<Triplet> calculateSideProperties(SourceAbstraction s); */
+  std::vector<Triplet> calculateSideProperties(SourceAbstraction s);
 
-  double        exposition_seconds = 1.0;
-  double        density;
-  double        diagonal_length;
+  double exposition_seconds = 1.0;
+  double density;
+  double diagonal_length;
 
+
+  std::mutex sources_mutex;
+  std::mutex obstacles_mutex;
 
   std::vector<SourceAbstraction>   sources;
   std::vector<ObstacleAbstraction> obstacles;
@@ -95,9 +100,13 @@ private:
   void terminationCallback(TerminationConstPtr &msg);
   void onWorldUpdate(const common::UpdateInfo &upd);
 
-  ros::NodeHandle ros_node;
-  ros::Publisher   ros_publisher, diagnostics_publisher;
+  double                    traceObstaclesAttenuation(SourceAbstraction sa);
+  std::vector<unsigned int> traceObstaclesId(SourceAbstraction sa);
 
+  ros::NodeHandle ros_node;
+  ros::Publisher  ros_publisher, diagnostics_publisher;
+
+  BatchVisualizer debug_visualizer;
   BatchVisualizer bv;
 
   Eigen::Vector3d sampleRectangle(Rectangle r);

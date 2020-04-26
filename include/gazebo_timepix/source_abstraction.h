@@ -40,9 +40,11 @@ private:
 
   Eigen::Vector3d      relative_position;
   std::vector<Triplet> side_properties;
-  // int - indices for exposed Timepix sides
-  // double - apparent activity for corresponding sides
-  // double - timepix_diagonal_absorption_probability (normalization constant)
+  // int - index of exposed Timepix side
+  // double - apparent activity of this source for indexed side
+  // double - probability of photon absorption along the timepix body diagonal (normalization constant for photons emitted by this source)
+
+  std::vector<unsigned int> obstacles_in_path;
 
 public:
   SourceAbstraction();
@@ -100,6 +102,18 @@ public:
 
   void setRelativePosition(Eigen::Vector3d relative_position) {
     this->relative_position = relative_position;
+  }
+
+  void addObstacle(unsigned int obstacle_id) {
+    obstacles_in_path.push_back(obstacle_id);
+  }
+
+  void removeObstacle(unsigned int obstacle_id) {
+    obstacles_in_path.erase(std::remove(obstacles_in_path.begin(), obstacles_in_path.end(), obstacle_id), obstacles_in_path.end());
+  }
+
+  std::vector<unsigned int> getObstaclesInPath() {
+    return obstacles_in_path;
   }
 };
 

@@ -39,6 +39,3 @@ link_directories(${GAZEBO_LIBRARY_DIRS})
 add_library(gazebo_timepix SHARED src/gazebo_timepix.cpp)
 target_link_libraries(gazebo_timepix data_utils ${catkin_LIBRARIES})
 add_dependencies(gazebo_timepix ${catkin_EXPORTED_TARGETS})
-
-# add_executable(timepix_test src/dummy_test.cpp)
-# target_link_libraries(timepix_test timepix data_utils ${catkin_LIBRARIES})
