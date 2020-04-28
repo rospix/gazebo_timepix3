@@ -1,6 +1,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
 
+#include <ros/console.h>
 #include <ros/package.h>
 #include <gazebo_timepix/data_utils.h>
 #include <iostream>
@@ -73,8 +74,27 @@ double interpolateAttenuation(Table table, AttenuationType type, double photon_e
 
 /* calculateMassAttCoeff //{ */
 double calculateMassAttCoeff(double photon_energy, std::string material, AttenuationType type) {
-  Table table = loadNistTable(material);
-  return interpolateAttenuation(table, type, photon_energy);
+  try {
+    Table table = loadNistTable(material);
+    return interpolateAttenuation(table, type, photon_energy);
+  }
+  catch (...) {
+    ROS_ERROR("[Radiation Data Utils]: NIST table not found for material %s!", material.c_str());
+    return 0.0;
+  }
+}
+//}
+
+/* getMaterialDensity //{ */
+double getMaterialDensity(std::string material) {
+  try {
+    Table table = loadNistTable(material);
+    return table[0][3];
+  }
+  catch (...) {
+    ROS_ERROR("[Radiation Data Utils]: NIST table not found or improperly formateed for material %s!", material.c_str());
+    return 0.0;
+  }
 }
 //}
 

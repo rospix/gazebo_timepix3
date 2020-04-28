@@ -100,7 +100,7 @@ private:
   void terminationCallback(TerminationConstPtr &msg);
   void onWorldUpdate(const common::UpdateInfo &upd);
 
-  double                    traceObstaclesAttenuation(SourceAbstraction sa);
+  double                    traceEnvironmentAbsorption(SourceAbstraction sa);
   std::vector<unsigned int> traceObstaclesId(SourceAbstraction sa);
 
   ros::NodeHandle ros_node;

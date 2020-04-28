@@ -62,7 +62,9 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   model_ = _model;
   buildSensorCuboid();
   local_frame << model_->GetName().c_str() << "/timepix_origin";
-  global_frame << "local_origin";
+  global_frame << model_->GetName().c_str() << "/gps_origin";
+  density = getMaterialDensity(material);
+
 
   rand_dbl = std::uniform_real_distribution<double>(0, 1);
 
@@ -91,8 +93,8 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   publisher_thread = boost::thread(boost::bind(&Timepix::PublisherLoop, this));
   ROS_INFO("[Timepix%u]: Plugin initialized", model_->GetId());
 
-  /* bv = BatchVisualizer(ros_node, "visualization", global_frame.str()); */
-  debug_visualizer = BatchVisualizer(ros_node, "debug_visualizer", global_frame.str());
+  bv               = BatchVisualizer(ros_node, "visualization", local_frame.str());
+  debug_visualizer = BatchVisualizer(ros_node, "debug_visualizer", local_frame.str());
   debug_visualizer.setPointsScale(0.7);
 }
 //}
@@ -232,86 +234,76 @@ void Timepix::terminationCallback(TerminationConstPtr &msg) {
 ros::Time Timepix::Simulate(ros::Time sim_start) {
   int photons_captured = 0;
   int rays_cast        = 0;
+  bv.clearBuffers();
+  bv.clearVisuals();
 
   for (auto source = sources.begin(); source != sources.end(); source++) {
     // get num of photons to be simulated
-    int lossles_num_photons = source->getSideProperties()[FRONT].apparent_activity;
     // trace obstacles
     Eigen::Vector3d source_pos               = source->getRelativePosition();
     Ray             r                        = Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
-    double          environment_transparency = 1.0;
+    double          environment_transmission = traceEnvironmentAbsorption(*source);
+    /* std::cout << "Transmitted percentage: " << (environment_transmission * 100) << "\%\n"; */
 
-    for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
+    std::vector<Triplet> side_properties = source->getSideProperties();
+    for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
+      int num_photons = (int)(side->apparent_activity * exposition_seconds * environment_transmission * side->diagnonal_absorption_prob);
+      /* std::cout << "Photons fired at side" << side->side_index << ": " << num_photons << "\n"; */
+
+      // generate N photons
+      for (int i = 0; i < num_photons; i++) {
+        Eigen::Vector3d intersect1 = sampleRectangle(sides[side->side_index]);
+
+        Ray r = Ray::twopointCast(source->getRelativePosition(), intersect1);
+        rays_cast++;
+        // for each photon check the collision with other sides of the sensor
+        for (int j = 0; j < 6; j++) {
+          if (j == side->side_index) {
+            continue;
+          }
+          auto intersect2 = sides[j].intersectionRay(r);
+          if (intersect2 != boost::none) {
+            // ray hit, now calculate detection probability
+
+            double track_length = (*intersect2 - intersect1).norm();
+            double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density) / side->diagnonal_absorption_prob;
+            /* std::cout << "Normalized absorption probability: " << pe_prob << "\n"; */
+            double coin_flip = rand_dbl(rand_gen);
+            if (coin_flip < pe_prob) {
+              bv.addRay(r, GREEN);
+              photons_captured++;
+            } else {
+              bv.addRay(r, ORANGE);
+            }
+          }
+        }
+      }
     }
   }
 
-  /* for (auto o = obstacles.begin(); o != obstacles.end(); o++) { */
-  /*   bv.addCuboid(o->getRelativeCuboid(), BROWN, false); */
+  /* DEBUG SECTION //{ */
+  /* if (sources.size() > 0) { */
+  /*   for (int i = 0; i < 10; i++) { */
+  /*     Eigen::Vector3d p1 = sampleRectangle(sides[FRONT]); */
+  /*     Ray             r  = Ray::twopointCast(sources[0].getRelativePosition(), p1); */
+  /*     auto            p2 = sides[BACK].intersectionRay(r); */
+  /*     /1* Triangle t1  = sides[BACK].triangles()[0]; *1/ */
+  /*     /1* Triangle t2  = sides[BACK].triangles()[1]; *1/ */
+  /*     /1* auto     p21 = t1.intersectionRay(r); *1/ */
+  /*     /1* auto     p22 = t2.intersectionRay(r); *1/ */
+
+  /*     if (p2 != boost::none) { */
+  /*       bv.addRectangle(sides[BACK]); */
+  /*       bv.addRay(r); */
+  /*       bv.addPoint(*p2); */
+  /*       std::cout << p2->x() << ", " << p2->y() << ", " << p2->z() << std::endl; */
+  /*       /1* std::cout << p22->x() << ", " << p22->y() << ", " << p22->z() << std::endl; *1/ */
+  /*     } */
+  /*   } */
   /* } */
-
-  /* for (auto s = sources.begin(); s != sources.end(); s++) { */
-  /*   /1*   // TODO obstacle attenuation *1/ */
-
-  /*   bv.addPoint(s->getRelativePosition(), GREEN); */
-  /*   bv.addRay(Ray::twopointCast(Eigen::Vector3d::Zero(), s->getRelativePosition())); */
-  /*   for (auto side_properties = s->getSideProperties().begin(); side_properties != s->getSideProperties().end(); side_properties++) { */
-
-  /*     int side_index = side_properties->side_index; */
-  /*     bv.addRectangle(sides[side_index], GRAY, true); */
-  /* //{ */
-
-  /* int samples = (int)(side_properties->apparent_activity * exposition_seconds * s->getDiagonalAbsorptionProb()); */
-
-  /* for (int n = 0; n < samples; n++) { */
-  /*   ros::Time curr_time = ros::Time::now(); */
-  /*   auto      time_diff = (curr_time - sim_start).toSec(); */
-  /*   if (time_diff >= exposition_seconds) { */
-  /*     ROS_WARN("[Timepix%u]: Time slip detected. Simulation incomplete", model_->GetId()); */
-  /*     publishSensorMsg(photons_captured); */
-  /*     return ros::Time::now(); */
-  /*   } */
-
-  /*   Eigen::Vector3d intersect1 = sampleRectangle(sides[side_index]); */
-
-  /*   Ray r = Ray::twopointCast(s->getRelativePosition(), intersect1); */
-  /*   rays_cast++; */
-  /*   for (int j = 0; j < 6; j++) { */
-  /*     if (j == side_index) { */
-  /*       continue; */
-  /*     } */
-  /*     Triangle t1 = sides[j].triangles()[0]; */
-  /*     Triangle t2 = sides[j].triangles()[1]; */
-
-  /*     boost::optional<Eigen::Vector3d> intersect2 = t1.intersectionRay(r); */
-  /*     if(intersect2 == boost::none){ */
-  /*       intersect2 = t2.intersectionRay(r); */
-  /*     } */
-  /*     double                           pe_prob; */
-  /*     if (intersect2) { */
-  /*       double track_length   = (intersect2.get() - intersect1).norm(); */
-  /*       double mass_att_coeff = s->getMassAttCoeff(); */
-  /*       pe_prob               = calculateAbsorptionProb(track_length, mass_att_coeff, density) / s->getDiagonalAbsorptionProb(); */
-
-  /*       /1* std::cout << "pe_prob: " << (pe_prob * 100) << "\%\n"; *1/ */
-  /*       double coin_flip = rand_dbl(rand_gen); */
-  /*       if (coin_flip < pe_prob) { */
-  /*         bv.addRay(r, GREEN); */
-  /*         photons_captured++; */
-  /*       } else { */
-  /*         bv.addRay(r, ORANGE); */
-  /*       } */
-  /*       break; */
-  /*     } */
-  /*   } */
   //}
-  /* } */
-  /* } */
-  /* auto sim_end      = ros::Time::now(); */
-  /* auto sim_duration = (sim_end - sim_start).toSec(); */
-  /* std::cout << "simulation duration: " << (1000 * sim_duration) << " ms\n"; */
-  /* ROS_INFO("[Timepix%u]: Rays cast: %d, Capture percentage: %.3f%, Simulation speed: %.3f rays/sec", model_->GetId(), rays_cast, */
-  /* (100.0 * photons_captured) / rays_cast, rays_cast / sim_duration_sec.count()); */
-  /* publishSensorMsg(photons_captured); */
+
+  bv.publish();
   return ros::Time::now();
 }
 //}
@@ -392,22 +384,35 @@ void Timepix::buildSensorCuboid() {
 }
 //}
 
-/* traceObstaclesAttenuation //{ */
-double Timepix::traceObstaclesAttenuation(SourceAbstraction sa) {
+/* traceEnvironmentAbsorption//{ */
+double Timepix::traceEnvironmentAbsorption(SourceAbstraction sa) {
   Eigen::Vector3d source_position = sa.getRelativePosition();
 
   Ray r = Ray::twopointCast(Eigen::Vector3d::Zero(), source_position);
 
-  double transmission = 1.0;
+  double transmission              = 1.0;
+  double cumulative_obstacle_track = 0.0;
   for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
     std::vector<Eigen::Vector3d> intersections = o->getRelativeCuboid().intersectionRay(r);
     if (intersections.size() > 1) {
       if (source_position.norm() > intersections[0].norm() && source_position.norm() > intersections[1].norm()) {
-        transmission *= calculateMassAttCoeff(sa.getEnergy(), material, AttenuationType::MASS_ENERGY);
+        double obstacle_track  = (intersections[0] - intersections[1]).norm();
+        double obstacle_mac    = calculateMassAttCoeff(sa.getEnergy(), o->getMaterial(), AttenuationType::MASS_ENERGY);
+        double absorption_prob = calculateAbsorptionProb(obstacle_track, obstacle_mac, o->getDensity());
+        /* std::cout << "Obstacle" << o->getId() << " track: " << obstacle_track << ", MAC: " << obstacle_mac << ", density: " << density */
+        /* << ", absorption: " << (absorption_prob * 100) << "\n"; */
+        transmission *= (1.0 - absorption_prob);
+        cumulative_obstacle_track += obstacle_track;
       }
     }
   }
-  return 1.0 - transmission;
+  double air_track       = sa.getRelativePosition().norm() - cumulative_obstacle_track;
+  double air_mac         = calculateMassAttCoeff(sa.getEnergy(), "air", AttenuationType::MASS_ENERGY);
+  double air_density     = getMaterialDensity("air");
+  double absorption_prob = calculateAbsorptionProb(air_track, air_mac, air_density);
+  /* std::cout << "Air track: " << air_track << ", MAC: " << air_mac << ", density: " << density << ", absorption: " << (absorption_prob * 100) << "\n"; */
+  transmission *= (1.0 - absorption_prob);
+  return transmission;
 }
 //}
 
@@ -424,11 +429,6 @@ std::vector<unsigned int> Timepix::traceObstaclesId(SourceAbstraction sa) {
     if (intersections.size() > 1) {
       if (source_position.norm() > intersections[0].norm() && source_position.norm() > intersections[1].norm()) {
         ret.push_back(o->getId());
-
-        // DEBUGOŇ
-        debug_visualizer.addPoint(intersections[0], GREEN);
-        debug_visualizer.addPoint(intersections[1], ORANGE);
-        debug_visualizer.addRay(r);
       }
     }
   }
@@ -453,7 +453,7 @@ Eigen::Vector3d Timepix::sampleRectangle(Rectangle r) {
   double k1 = rand_dbl(rand_gen);
   double k2 = rand_dbl(rand_gen);
 
-  return r.a() + k1 * (r.b() - r.a()) + k2 * (r.c() - r.a());
+  return r.a() + k1 * (r.b() - r.a()) + k2 * (r.d() - r.a());
 }
 //}
 
@@ -504,16 +504,16 @@ void Timepix::publishDiagnostics() {
     sd.relative_pos.z = s->getRelativePosition().z();
 
     int i = 0;
-    for (auto sides = s->getSideProperties().begin(); sides != s->getSideProperties().end(); sides++) {
+    for (auto side = s->getSideProperties().begin(); side != s->getSideProperties().end(); side++) {
       if (i == 0) {
-        sd.exposed_sides.x       = sides->side_index;
-        sd.apparent_activities.x = sides->apparent_activity;
+        sd.exposed_sides.x       = side->side_index;
+        sd.apparent_activities.x = side->apparent_activity;
       } else if (i == 1) {
-        sd.exposed_sides.y       = sides->side_index;
-        sd.apparent_activities.y = sides->apparent_activity;
+        sd.exposed_sides.y       = side->side_index;
+        sd.apparent_activities.y = side->apparent_activity;
       } else {
-        sd.exposed_sides.z       = sides->side_index;
-        sd.apparent_activities.z = sides->apparent_activity;
+        sd.exposed_sides.z       = side->side_index;
+        sd.apparent_activities.z = side->apparent_activity;
       }
       i++;
     }
@@ -562,10 +562,10 @@ void Timepix::debugVisualize() {
 
     // draw participating obstacles
     auto participating_obstacles = traceObstaclesId(sources[i]);
-    std::cout << "Traced obstacles:\n";
-    for (unsigned int j = 0; j < participating_obstacles.size(); j++) {
-      std::cout << "Obstacle" << participating_obstacles[j] << "\n";
-    }
+    /* std::cout << "Traced obstacles:\n"; */
+    /* for (unsigned int j = 0; j < participating_obstacles.size(); j++) { */
+    /*   std::cout << "Obstacle" << participating_obstacles[j] << "\n"; */
+    /* } */
   }
 
   for (unsigned int i = 0; i < obstacles.size(); i++) {

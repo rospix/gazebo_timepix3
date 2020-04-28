@@ -22,6 +22,7 @@ private:
   Eigen::Vector3d    relative_position;
   Eigen::Quaterniond relative_orientation;
   Eigen::Vector3d    size;
+  double             density;
 
   Cuboid relative_cuboid;  // TODO update to allow different shapes of obstacles
 
@@ -120,6 +121,10 @@ public:
   void updateRelativeCuboid() {
     relative_cuboid = Cuboid(relative_position, size, relative_orientation);
   }
+
+  double getDensity() {
+    return density;
+  }
 };
 
 ObstacleAbstraction::ObstacleAbstraction() {
@@ -135,6 +140,7 @@ ObstacleAbstraction::ObstacleAbstraction(unsigned int gazebo_id, std::string mat
   this->relative_position    = relative_position;
   this->relative_orientation = relative_orientation;
   this->size                 = size;
+  this->density              = getMaterialDensity(material);
 }
 
 #endif /* RADIATION_UTILS_OBSTACLE_H */

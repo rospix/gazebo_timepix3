@@ -20,5 +20,6 @@ Table  loadNistTable(std::string material);
 double interpolateAttenuation(Table table, AttenuationType type, double photon_energy);
 
 double calculateMassAttCoeff(double photon_energy, std::string material, AttenuationType type);
+double getMaterialDensity(std::string material);
 double calculateAbsorptionProb(double track_length, double attenuation_coeff, double material_density);
 #endif
