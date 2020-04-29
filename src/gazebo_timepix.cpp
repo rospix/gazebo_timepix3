@@ -86,8 +86,12 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   termination_sub = gazebo_node_->Subscribe("~/radiation/termination", &Timepix::terminationCallback, this, 1);
 
   // ros communication
-  ros_publisher         = ros_node.advertise<gazebo_rad_msgs::Timepix>("/radiation/timepix", 1);
-  diagnostics_publisher = ros_node.advertise<gazebo_rad_msgs::TimepixDiagnostics>("/radiation/diagnostics", 1);
+  std::stringstream ss;
+  ss << "/" << model_->GetName() << "/timepix/data";
+  ros_publisher = ros_node.advertise<gazebo_rad_msgs::Timepix>(ss.str().c_str(), 1);
+  ss.str(std::string());
+  ss << "/" << model_->GetName() << "/timepix/plugin_diagnostics";
+  diagnostics_publisher = ros_node.advertise<gazebo_rad_msgs::TimepixDiagnostics>(ss.str().c_str(), 1);
 
   terminated       = false;
   publisher_thread = boost::thread(boost::bind(&Timepix::PublisherLoop, this));
@@ -303,7 +307,10 @@ ros::Time Timepix::Simulate(ros::Time sim_start) {
   /* } */
   //}
 
+  std::cout << "Captured photons: " << photons_captured << "\n";
+  publishSensorMsg(photons_captured);
   bv.publish();
+
   return ros::Time::now();
 }
 //}
@@ -312,27 +319,10 @@ ros::Time Timepix::Simulate(ros::Time sim_start) {
 void Timepix::PublisherLoop() {
   while (!terminated) {
     auto sim_start = ros::Time::now();
-    auto sim_end   = Simulate(sim_start);
-
-    /* RVIZ visualization (ROS message) //{ */
-    gazebo_rad_msgs::Timepix debug_msg;
-    debug_msg.material = material;
-    debug_msg.exposure = exposition_seconds;
-    debug_msg.count    = 0;
-    debug_msg.id       = model_->GetId();
-    debug_msg.size.x   = size[0];
-    debug_msg.size.y   = size[1];
-    debug_msg.size.z   = size[2];
-    debug_msg.stamp    = ros::Time::now();
-    ros_publisher.publish(debug_msg);
-    //}
-
-    /* diagnostics (ROS message) //{ */
     publishDiagnostics();
-    //}
-
+    auto sim_end      = Simulate(sim_start);
     auto sim_duration = sim_end - sim_start;
-    /* ROS_INFO("[Timepix%u]: Simulation took %d nsec", model_->GetId(), sim_duration.nsec); */
+    ROS_INFO("[Timepix%u]: Simulation took %d nsec", model_->GetId(), sim_duration.nsec);
     (ros::Duration(exposition_seconds) - sim_duration).sleep();
   }
 }
@@ -469,6 +459,7 @@ void Timepix::publishSensorMsg(int particle_count) {
   msg.exposure = exposition_seconds;
   msg.count    = particle_count;
 
+  std::cout << "Publishing ros msg!\n";
   ros_publisher.publish(msg);
 }
 //}
