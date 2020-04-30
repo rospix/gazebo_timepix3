@@ -34,9 +34,10 @@ private:
   unsigned int gazebo_id;
   double       activity;
   double       energy;
-  double       mass_att_coeff;
+  double       mass_att_coeff;  // attenuation of emitted particles by the sensor
   std::string  material;
   double       diagonal_absorption_prob;
+  double       air_mass_att_coeff;  // atttenuation of emitted particles by air
 
   Eigen::Vector3d      relative_position;
   std::vector<Triplet> side_properties;
@@ -49,8 +50,8 @@ private:
 public:
   SourceAbstraction();
   ~SourceAbstraction();
-  SourceAbstraction(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff, double diagnonal_absorption_prob,
-                    Eigen::Vector3d relative_position);
+  SourceAbstraction(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff, double air_mass_att_coeff,
+                    double diagnonal_absorption_prob, Eigen::Vector3d relative_position);
 
   bool operator==(SourceAbstraction const &s1) {
     return this->gazebo_id == s1.gazebo_id;
@@ -115,6 +116,10 @@ public:
   std::vector<unsigned int> getObstaclesInPath() {
     return obstacles_in_path;
   }
+
+  double getAirMassAttCoeff() {
+    return air_mass_att_coeff;
+  }
 };
 
 SourceAbstraction::SourceAbstraction() {
@@ -124,12 +129,13 @@ SourceAbstraction::~SourceAbstraction() {
 }
 
 SourceAbstraction::SourceAbstraction(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff,
-                                     double diagonal_absorption_prob, Eigen::Vector3d relative_position) {
+                                     double air_mass_att_coeff, double diagonal_absorption_prob, Eigen::Vector3d relative_position) {
   this->gazebo_id                = gazebo_id;
   this->material                 = material;
   this->activity                 = activity;
   this->energy                   = energy;
   this->mass_att_coeff           = mass_att_coeff;
+  this->air_mass_att_coeff       = air_mass_att_coeff;
   this->diagonal_absorption_prob = diagonal_absorption_prob;
   this->relative_position        = relative_position;
 }

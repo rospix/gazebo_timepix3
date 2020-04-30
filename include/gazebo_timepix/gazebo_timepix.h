@@ -78,6 +78,7 @@ private:
   double density;
   double diagonal_length;
 
+  double air_density;
 
   std::mutex sources_mutex;
   std::mutex obstacles_mutex;

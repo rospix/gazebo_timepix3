@@ -63,7 +63,8 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   buildSensorCuboid();
   local_frame << model_->GetName().c_str() << "/timepix_origin";
   global_frame << model_->GetName().c_str() << "/gps_origin";
-  density = getMaterialDensity(material);
+  density     = getMaterialDensity(material);
+  air_density = getMaterialDensity("air");
 
 
   rand_dbl = std::uniform_real_distribution<double>(0, 1);
@@ -133,10 +134,10 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
   ROS_INFO("[Timepix%u]: Newly registered RadiationSource%u", model_->GetId(), msg->id());
   Eigen::Vector3d source_world_pos(msg->x(), msg->y(), msg->z());
 
-  double mass_att_coeff            = calculateMassAttCoeff(msg->energy(), material, AttenuationType::MASS_ENERGY);
-  double diagnonal_absorption_prob = calculateAbsorptionProb(diagonal_length, mass_att_coeff, density);
-
-  SourceAbstraction s(msg->id(), msg->material(), msg->activity(), msg->energy(), mass_att_coeff, diagnonal_absorption_prob,
+  double            mass_att_coeff            = calculateMassAttCoeff(msg->energy(), material, AttenuationType::MASS_ENERGY);
+  double            diagnonal_absorption_prob = calculateAbsorptionProb(diagonal_length, mass_att_coeff, density);
+  double            air_mass_att_coeff        = calculateMassAttCoeff(msg->energy(), "air", AttenuationType::MASS_ENERGY);
+  SourceAbstraction s(msg->id(), msg->material(), msg->activity(), msg->energy(), mass_att_coeff, air_mass_att_coeff, diagnonal_absorption_prob,
                       targetRelativePosition(model_->WorldPose(), source_world_pos));
   s.setSideProperties(calculateSideProperties(s));
   sources.push_back(s);
@@ -307,7 +308,7 @@ ros::Time Timepix::Simulate(ros::Time sim_start) {
   /* } */
   //}
 
-  std::cout << "Captured photons: " << photons_captured << "\n";
+  /* std::cout << "Captured photons: " << photons_captured << "\n"; */
   publishSensorMsg(photons_captured);
   bv.publish();
 
@@ -322,7 +323,7 @@ void Timepix::PublisherLoop() {
     publishDiagnostics();
     auto sim_end      = Simulate(sim_start);
     auto sim_duration = sim_end - sim_start;
-    ROS_INFO("[Timepix%u]: Simulation took %d nsec", model_->GetId(), sim_duration.nsec);
+    /* ROS_INFO("[Timepix%u]: Simulation took %d nsec", model_->GetId(), sim_duration.nsec); */
     (ros::Duration(exposition_seconds) - sim_duration).sleep();
   }
 }
@@ -397,8 +398,7 @@ double Timepix::traceEnvironmentAbsorption(SourceAbstraction sa) {
     }
   }
   double air_track       = sa.getRelativePosition().norm() - cumulative_obstacle_track;
-  double air_mac         = calculateMassAttCoeff(sa.getEnergy(), "air", AttenuationType::MASS_ENERGY);
-  double air_density     = getMaterialDensity("air");
+  double air_mac         = sa.getAirMassAttCoeff();
   double absorption_prob = calculateAbsorptionProb(air_track, air_mac, air_density);
   /* std::cout << "Air track: " << air_track << ", MAC: " << air_mac << ", density: " << density << ", absorption: " << (absorption_prob * 100) << "\n"; */
   transmission *= (1.0 - absorption_prob);
