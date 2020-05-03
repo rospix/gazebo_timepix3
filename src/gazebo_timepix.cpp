@@ -459,7 +459,6 @@ void Timepix::publishSensorMsg(int particle_count) {
   msg.exposure = exposition_seconds;
   msg.count    = particle_count;
 
-  std::cout << "Publishing ros msg!\n";
   ros_publisher.publish(msg);
 }
 //}
@@ -545,6 +544,10 @@ void Timepix::debugVisualize() {
   for (unsigned int i = 0; i < sides.size(); i++) {
     debug_visualizer.addRectangle(sides[i], BLUE, true);
     debug_visualizer.addRectangle(sides[i], BLACK, false);
+
+    // draw side normals
+    /* Ray r = Ray::twopointCast(sides[i].center(), sides[i].center() + sides[i].normal()); */
+    /* debug_visualizer.addRay(r); */
   }
 
   // draw registered sources
