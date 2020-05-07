@@ -31,11 +31,8 @@ include_directories(
   ${GAZEBO_INCLUDE_DIRS}
   )
 
-add_library(data_utils SHARED src/data_utils.cpp)
-target_link_libraries(data_utils ${catkin_LIBRARIES})
-
 link_directories(${GAZEBO_LIBRARY_DIRS})
 
 add_library(gazebo_timepix SHARED src/gazebo_timepix.cpp)
-target_link_libraries(gazebo_timepix data_utils ${catkin_LIBRARIES})
+target_link_libraries(gazebo_timepix ${catkin_LIBRARIES})
 add_dependencies(gazebo_timepix ${catkin_EXPORTED_TARGETS})

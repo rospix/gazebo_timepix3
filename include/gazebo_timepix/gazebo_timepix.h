@@ -27,6 +27,7 @@
 #include <gazebo_timepix/obstacle_abstraction.h>
 
 #include <radiation_utils/geometry.h>
+#include <radiation_utils/physics.h>
 #include <radiation_utils/batch_visualizer.h>
 
 // ros and gazebo messages
