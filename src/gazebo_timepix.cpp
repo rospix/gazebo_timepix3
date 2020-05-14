@@ -62,7 +62,7 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   model_ = _model;
   buildSensorCuboid();
   local_frame << model_->GetName().c_str() << "/timepix_origin";
-  global_frame << model_->GetName().c_str() << "/gps_origin";
+  global_frame << model_->GetName().c_str() << "/local_origin";
   density     = getMaterialDensity(material);
   air_density = getMaterialDensity("air");
 
