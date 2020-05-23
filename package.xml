@@ -1,5 +1,6 @@
 <?xml version="1.0"?>
-<package>
+<package format="2">
+
   <name>gazebo_timepix</name>
   <version>2.0.0</version>
   <description>This package contains implementation of Timepix detector simulator plugin for Gazebo.
@@ -7,23 +8,21 @@
   </description>
 
   <maintainer email="stibipet@fel.cvut.cz">Petr Stibinger</maintainer>
-  <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>
+  <author email="tomas.baca@fel.cvut.cz">Tomas Baca</author>
 
   <license>GPLv3</license>
 
   <buildtool_depend>catkin</buildtool_depend>
 
-  <build_depend>roscpp</build_depend>
-  <build_depend>std_msgs</build_depend>
-  <build_depend>gazebo_ros</build_depend>
-  <build_depend>radiation_utils</build_depend>
-  <build_depend>gazebo_rad_msgs</build_depend>
+  <!-- <build_depend>mrs_lib</build_depend> -->
 
-  <run_depend>roscpp</run_depend>
-  <run_depend>std_msgs</run_depend>
-  <run_depend>gazebo_ros</run_depend>
-  <run_depend>radiation_utils</run_depend>
-  <run_depend>gazebo_rad_msgs</run_depend>
+  <depend>roscpp</depend>
+  <depend>std_msgs</depend>
+  <depend>gazebo_ros</depend>
+  <depend>radiation_utils</depend>
+  <depend>gazebo_rad_msgs</depend>
+  <depend>mrs_msgs</depend>
+  <depend>mrs_lib</depend>
 
   <export>
   </export>

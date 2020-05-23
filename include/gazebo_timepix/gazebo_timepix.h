@@ -22,13 +22,16 @@
 #include <sdf/sdf.hh>
 #include <tf/transform_broadcaster.h>
 
+// mrs libraries
+#include <mrs_msgs/Float64Srv.h>
+#include <mrs_lib/geometry_utils.h>
+#include <mrs_lib/batch_visualizer.h>
+
 // package libraries
 #include <gazebo_timepix/source_abstraction.h>
 #include <gazebo_timepix/obstacle_abstraction.h>
 
-#include <radiation_utils/geometry.h>
 #include <radiation_utils/physics.h>
-#include <radiation_utils/batch_visualizer.h>
 
 // ros and gazebo messages
 #include <gazebo_rad_msgs/Timepix.h>
@@ -86,7 +89,7 @@ private:
 
   std::vector<SourceAbstraction>   sources;
   std::vector<ObstacleAbstraction> obstacles;
-  std::vector<Rectangle>           sides;
+  std::vector<mrs_lib::Rectangle>  sides;
 
   physics::ModelPtr       model_;
   transport::NodePtr      gazebo_node_;
@@ -102,16 +105,20 @@ private:
   void terminationCallback(TerminationConstPtr &msg);
   void onWorldUpdate(const common::UpdateInfo &upd);
 
+  // param control
+  bool setExpositionCallback(mrs_msgs::Float64SrvRequest &req, mrs_msgs::Float64SrvResponse &res);
+
   double                    traceEnvironmentAbsorption(SourceAbstraction sa);
   std::vector<unsigned int> traceObstaclesId(SourceAbstraction sa);
 
-  ros::NodeHandle ros_node;
-  ros::Publisher  ros_publisher, diagnostics_publisher;
+  ros::NodeHandle    ros_node;
+  ros::Publisher     ros_publisher, diagnostics_publisher;
+  ros::ServiceServer set_exposition_server;
 
   BatchVisualizer debug_visualizer;
   BatchVisualizer bv;
 
-  Eigen::Vector3d sampleRectangle(Rectangle r);
+  Eigen::Vector3d sampleRectangle(mrs_lib::Rectangle r);
 
   // RNG stuff
   std::mt19937                           rand_gen;

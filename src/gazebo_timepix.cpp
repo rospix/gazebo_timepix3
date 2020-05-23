@@ -62,7 +62,7 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   model_ = _model;
   buildSensorCuboid();
   local_frame << model_->GetName().c_str() << "/timepix_origin";
-  global_frame << model_->GetName().c_str() << "/local_origin";
+  global_frame << model_->GetName().c_str() << "/gps_origin";
   density     = getMaterialDensity(material);
   air_density = getMaterialDensity("air");
 
@@ -93,6 +93,8 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   ss.str(std::string());
   ss << "/" << model_->GetName() << "/timepix/plugin_diagnostics";
   diagnostics_publisher = ros_node.advertise<gazebo_rad_msgs::TimepixDiagnostics>(ss.str().c_str(), 1);
+  ss << "/" << model_->GetName() << "/timepix/set_exposition";
+  set_exposition_server = ros_node.advertiseService(ss.str().c_str(), &Timepix::setExpositionCallback, this);
 
   terminated       = false;
   publisher_thread = boost::thread(boost::bind(&Timepix::PublisherLoop, this));
@@ -246,7 +248,7 @@ ros::Time Timepix::Simulate(ros::Time sim_start) {
     // get num of photons to be simulated
     // trace obstacles
     Eigen::Vector3d source_pos               = source->getRelativePosition();
-    Ray             r                        = Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
+    mrs_lib::Ray    r                        = mrs_lib::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
     double          environment_transmission = traceEnvironmentAbsorption(*source);
     /* std::cout << "Transmitted percentage: " << (environment_transmission * 100) << "\%\n"; */
 
@@ -259,7 +261,7 @@ ros::Time Timepix::Simulate(ros::Time sim_start) {
       for (int i = 0; i < num_photons; i++) {
         Eigen::Vector3d intersect1 = sampleRectangle(sides[side->side_index]);
 
-        Ray r = Ray::twopointCast(source->getRelativePosition(), intersect1);
+        mrs_lib::Ray r = mrs_lib::Ray::twopointCast(source->getRelativePosition(), intersect1);
         rays_cast++;
         // for each photon check the collision with other sides of the sensor
         for (int j = 0; j < 6; j++) {
@@ -290,7 +292,7 @@ ros::Time Timepix::Simulate(ros::Time sim_start) {
   /* if (sources.size() > 0) { */
   /*   for (int i = 0; i < 10; i++) { */
   /*     Eigen::Vector3d p1 = sampleRectangle(sides[FRONT]); */
-  /*     Ray             r  = Ray::twopointCast(sources[0].getRelativePosition(), p1); */
+  /*     Ray             r  = mrs_lib::Ray::twopointCast(sources[0].getRelativePosition(), p1); */
   /*     auto            p2 = sides[BACK].intersectionRay(r); */
   /*     /1* Triangle t1  = sides[BACK].triangles()[0]; *1/ */
   /*     /1* Triangle t2  = sides[BACK].triangles()[1]; *1/ */
@@ -335,7 +337,7 @@ std::vector<Triplet> Timepix::calculateSideProperties(SourceAbstraction s) {
   for (int i = 0; i < 6 && ret.size() <= 3; i++) {
     Eigen::Vector3d side_normal = (sides[i].b() - sides[i].a()).cross(sides[i].d() - sides[i].a());
     if (side_normal.dot(s.getRelativePosition()) > 0) {
-      double solid_angle = geometry::rectSolidAngle(sides[i], s.getRelativePosition());
+      double solid_angle = mrs_lib::rectSolidAngle(sides[i], s.getRelativePosition());
       if (solid_angle == solid_angle) {  // NaN check
         double  apparent_activity = (s.getActivity() / 4 * M_PI) * solid_angle;
         Triplet triplet;
@@ -353,7 +355,7 @@ std::vector<Triplet> Timepix::calculateSideProperties(SourceAbstraction s) {
 /* buildSensorCuboid //{ */
 void Timepix::buildSensorCuboid() {
   for (int i = 0; i < 6; i++) {
-    sides.push_back(Rectangle());
+    sides.push_back(mrs_lib::Rectangle());
   }
   Eigen::Vector3d A(size[0] / 2.0, -size[1] / 2.0, -size[2] / 2.0);
   Eigen::Vector3d B(size[0] / 2.0, size[1] / 2.0, -size[2] / 2.0);
@@ -365,12 +367,12 @@ void Timepix::buildSensorCuboid() {
   Eigen::Vector3d G(-size[0] / 2.0, -size[1] / 2.0, size[2] / 2.0);
   Eigen::Vector3d H(-size[0] / 2.0, size[1] / 2.0, size[2] / 2.0);
 
-  sides[FRONT]    = Rectangle(A, B, C, D);
-  sides[BACK]     = Rectangle(E, F, G, H);
-  sides[LEFT]     = Rectangle(B, E, H, C);
-  sides[RIGHT]    = Rectangle(F, A, D, G);
-  sides[BOTTOM]   = Rectangle(F, E, B, A);
-  sides[TOP]      = Rectangle(D, C, H, G);
+  sides[FRONT]    = mrs_lib::Rectangle(A, B, C, D);
+  sides[BACK]     = mrs_lib::Rectangle(E, F, G, H);
+  sides[LEFT]     = mrs_lib::Rectangle(B, E, H, C);
+  sides[RIGHT]    = mrs_lib::Rectangle(F, A, D, G);
+  sides[BOTTOM]   = mrs_lib::Rectangle(F, E, B, A);
+  sides[TOP]      = mrs_lib::Rectangle(D, C, H, G);
   diagonal_length = (C - F).norm();
 }
 //}
@@ -379,7 +381,7 @@ void Timepix::buildSensorCuboid() {
 double Timepix::traceEnvironmentAbsorption(SourceAbstraction sa) {
   Eigen::Vector3d source_position = sa.getRelativePosition();
 
-  Ray r = Ray::twopointCast(Eigen::Vector3d::Zero(), source_position);
+  mrs_lib::Ray r = mrs_lib::Ray::twopointCast(Eigen::Vector3d::Zero(), source_position);
 
   double transmission              = 1.0;
   double cumulative_obstacle_track = 0.0;
@@ -412,7 +414,7 @@ std::vector<unsigned int> Timepix::traceObstaclesId(SourceAbstraction sa) {
 
   Eigen::Vector3d source_position = sa.getRelativePosition();
 
-  Ray r = Ray::twopointCast(Eigen::Vector3d::Zero(), source_position);
+  mrs_lib::Ray r = mrs_lib::Ray::twopointCast(Eigen::Vector3d::Zero(), source_position);
 
   for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
     std::vector<Eigen::Vector3d> intersections = o->getRelativeCuboid().intersectionRay(r);
@@ -437,8 +439,22 @@ void Timepix::onWorldUpdate([[maybe_unused]] const common::UpdateInfo &upd) {
 }
 //}
 
+/* setExpositionCallback //{ */
+bool Timepix::setExpositionCallback(mrs_msgs::Float64SrvRequest &req, mrs_msgs::Float64SrvResponse &res) {
+  if (req.value > 0) {
+    exposition_seconds = req.value;
+    res.message        = "new exposition time was set";
+    res.success        = true;
+    return true;
+  }
+  res.message = "cannot set negative exposition time";
+  res.success = false;
+  return false;
+}
+//}
+
 /* sampleRectangle //{ */
-Eigen::Vector3d Timepix::sampleRectangle(Rectangle r) {
+Eigen::Vector3d Timepix::sampleRectangle(mrs_lib::Rectangle r) {
 
   double k1 = rand_dbl(rand_gen);
   double k2 = rand_dbl(rand_gen);
@@ -546,7 +562,7 @@ void Timepix::debugVisualize() {
     debug_visualizer.addRectangle(sides[i], BLACK, false);
 
     // draw side normals
-    /* Ray r = Ray::twopointCast(sides[i].center(), sides[i].center() + sides[i].normal()); */
+    /* mrs_lib::Ray r = mrs_lib::Ray::twopointCast(sides[i].center(), sides[i].center() + sides[i].normal()); */
     /* debug_visualizer.addRay(r); */
   }
 

@@ -8,6 +8,8 @@ find_package(catkin REQUIRED
   std_msgs
   gazebo_ros
   radiation_utils
+  mrs_msgs
+  mrs_lib
   gazebo_rad_msgs
   )
 
@@ -20,9 +22,9 @@ find_package(gazebo REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-  DEPENDS gazebo_ros gazebo_rad_msgs radiation_utils
-  CATKIN_DEPENDS roscpp std_msgs
-  # LIBRARIES radiation_utils
+  DEPENDS Eigen 
+  CATKIN_DEPENDS roscpp std_msgs mrs_msgs mrs_lib gazebo_ros gazebo_rad_msgs radiation_utils 
+  LIBRARIES mrs_lib
   )
 
 include_directories(
@@ -34,5 +36,5 @@ include_directories(
 link_directories(${GAZEBO_LIBRARY_DIRS})
 
 add_library(gazebo_timepix SHARED src/gazebo_timepix.cpp)
-target_link_libraries(gazebo_timepix ${catkin_LIBRARIES})
+target_link_libraries(gazebo_timepix ${catkin_LIBRARIES} ${Eigen_LIBRARIES})
 add_dependencies(gazebo_timepix ${catkin_EXPORTED_TARGETS})
