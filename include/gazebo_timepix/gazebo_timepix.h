@@ -69,8 +69,8 @@ private:
 
   bool          terminated;
   boost::thread publisher_thread;
-  void          PublisherLoop();
-  ros::Time     Simulate(ros::Time sim_start);
+  void          publisherLoop();
+  ros::Time     simulate();
   void          buildSensorCuboid();
   void          publishDiagnostics();
   void          debugVisualize();
@@ -95,7 +95,7 @@ private:
   transport::NodePtr      gazebo_node_;
   transport::PublisherPtr gazebo_publisher_;
 
-  transport::SubscriberPtr sources_sub, obstacles_sub, termination_sub;
+  transport::SubscriberPtr sources_sub_, obstacles_sub_, termination_sub_;
   tf::TransformBroadcaster transform_broadcaster;
 
   event::ConnectionPtr updateConnection_;

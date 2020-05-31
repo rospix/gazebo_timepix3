@@ -21,9 +21,9 @@ using namespace gazebo;
 Timepix::~Timepix() {
 
   // shutdown subscribers
-  sources_sub->Unsubscribe();
-  obstacles_sub->Unsubscribe();
-  termination_sub->Unsubscribe();
+  sources_sub_->Unsubscribe();
+  obstacles_sub_->Unsubscribe();
+  termination_sub_->Unsubscribe();
 
   // inform other gazebo nodes
   gazebo_rad_msgs::msgs::Termination msg;
@@ -62,7 +62,7 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   model_ = _model;
   buildSensorCuboid();
   local_frame << model_->GetName().c_str() << "/timepix_origin";
-  global_frame << model_->GetName().c_str() << "/gps_origin";
+  global_frame << model_->GetName().c_str() << "/local_origin";
   density     = getMaterialDensity(material);
   air_density = getMaterialDensity("air");
 
@@ -82,9 +82,9 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   updateConnection_ = event::Events::ConnectWorldUpdateBegin(boost::bind(&Timepix::onWorldUpdate, this, _1));
 
   // gazebo communication
-  sources_sub     = gazebo_node_->Subscribe("~/radiation/sources", &Timepix::sourcesCallback, this, 1);
-  obstacles_sub   = gazebo_node_->Subscribe("~/radiation/obstacles", &Timepix::obstaclesCallback, this, 1);
-  termination_sub = gazebo_node_->Subscribe("~/radiation/termination", &Timepix::terminationCallback, this, 1);
+  sources_sub_     = gazebo_node_->Subscribe("~/radiation/sources", &Timepix::sourcesCallback, this, 1);
+  obstacles_sub_   = gazebo_node_->Subscribe("~/radiation/obstacles", &Timepix::obstaclesCallback, this, 1);
+  termination_sub_ = gazebo_node_->Subscribe("~/radiation/termination", &Timepix::terminationCallback, this, 1);
 
   // ros communication
   std::stringstream ss;
@@ -93,16 +93,16 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   ss.str(std::string());
   ss << "/" << model_->GetName() << "/timepix/plugin_diagnostics";
   diagnostics_publisher = ros_node.advertise<gazebo_rad_msgs::TimepixDiagnostics>(ss.str().c_str(), 1);
+  ss.str(std::string());
   ss << "/" << model_->GetName() << "/timepix/set_exposition";
   set_exposition_server = ros_node.advertiseService(ss.str().c_str(), &Timepix::setExpositionCallback, this);
 
-  terminated       = false;
-  publisher_thread = boost::thread(boost::bind(&Timepix::PublisherLoop, this));
-  ROS_INFO("[Timepix%u]: Plugin initialized", model_->GetId());
-
-  bv               = BatchVisualizer(ros_node, "visualization", local_frame.str());
   debug_visualizer = BatchVisualizer(ros_node, "debug_visualizer", local_frame.str());
-  debug_visualizer.setPointsScale(0.7);
+  debug_visualizer.setPointsScale(0.3);
+
+  terminated       = false;
+  publisher_thread = boost::thread(boost::bind(&Timepix::publisherLoop, this));
+  ROS_INFO("[Timepix%u]: Plugin initialized", model_->GetId());
 }
 //}
 
@@ -122,10 +122,6 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
       for (auto side_triplet = source->getSideProperties().begin(); side_triplet != source->getSideProperties().end(); side_triplet++) {
         apparent_activities.push_back(side_triplet->apparent_activity);
       }
-      /* std::cout << "Source" << msg->id() << ": apparent activities:\n"; */
-      /* for (unsigned int i = 0; i < apparent_activities.size(); i++) { */
-      /* std::cout << "     " << apparent_activities[i] << "\n"; */
-      /* } */
       sources_mutex.unlock();
       return;
     }
@@ -237,12 +233,10 @@ void Timepix::terminationCallback(TerminationConstPtr &msg) {
 }
 //}
 
-/* Simulate //{ */
-ros::Time Timepix::Simulate(ros::Time sim_start) {
+/* simulate //{ */
+ros::Time Timepix::simulate() {
   int photons_captured = 0;
   int rays_cast        = 0;
-  bv.clearBuffers();
-  bv.clearVisuals();
 
   for (auto source = sources.begin(); source != sources.end(); source++) {
     // get num of photons to be simulated
@@ -250,12 +244,16 @@ ros::Time Timepix::Simulate(ros::Time sim_start) {
     Eigen::Vector3d source_pos               = source->getRelativePosition();
     mrs_lib::Ray    r                        = mrs_lib::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
     double          environment_transmission = traceEnvironmentAbsorption(*source);
-    /* std::cout << "Transmitted percentage: " << (environment_transmission * 100) << "\%\n"; */
 
     std::vector<Triplet> side_properties = source->getSideProperties();
     for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
       int num_photons = (int)(side->apparent_activity * exposition_seconds * environment_transmission * side->diagnonal_absorption_prob);
-      /* std::cout << "Photons fired at side" << side->side_index << ": " << num_photons << "\n"; */
+
+      /* if (num_photons < 0) { */
+      /*   ROS_ERROR("[%s]: neco je spatne!", ros::this_node::getName().c_str()); */
+      /*   ROS_INFO("[%s]: Side[%d]: apparent activity: %.4f, diag_abs_prob: %.4f, env_trans: %.4f", ros::this_node::getName().c_str(), side->side_index, */
+      /*            side->apparent_activity, side->diagnonal_absorption_prob, environment_transmission); */
+      /* } */
 
       // generate N photons
       for (int i = 0; i < num_photons; i++) {
@@ -274,58 +272,27 @@ ros::Time Timepix::Simulate(ros::Time sim_start) {
 
             double track_length = (*intersect2 - intersect1).norm();
             double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density) / side->diagnonal_absorption_prob;
-            /* std::cout << "Normalized absorption probability: " << pe_prob << "\n"; */
-            double coin_flip = rand_dbl(rand_gen);
+            double coin_flip    = rand_dbl(rand_gen);
             if (coin_flip < pe_prob) {
-              bv.addRay(r, GREEN);
               photons_captured++;
-            } else {
-              bv.addRay(r, ORANGE);
             }
           }
         }
       }
     }
   }
-
-  /* DEBUG SECTION //{ */
-  /* if (sources.size() > 0) { */
-  /*   for (int i = 0; i < 10; i++) { */
-  /*     Eigen::Vector3d p1 = sampleRectangle(sides[FRONT]); */
-  /*     Ray             r  = mrs_lib::Ray::twopointCast(sources[0].getRelativePosition(), p1); */
-  /*     auto            p2 = sides[BACK].intersectionRay(r); */
-  /*     /1* Triangle t1  = sides[BACK].triangles()[0]; *1/ */
-  /*     /1* Triangle t2  = sides[BACK].triangles()[1]; *1/ */
-  /*     /1* auto     p21 = t1.intersectionRay(r); *1/ */
-  /*     /1* auto     p22 = t2.intersectionRay(r); *1/ */
-
-  /*     if (p2 != boost::none) { */
-  /*       bv.addRectangle(sides[BACK]); */
-  /*       bv.addRay(r); */
-  /*       bv.addPoint(*p2); */
-  /*       std::cout << p2->x() << ", " << p2->y() << ", " << p2->z() << std::endl; */
-  /*       /1* std::cout << p22->x() << ", " << p22->y() << ", " << p22->z() << std::endl; *1/ */
-  /*     } */
-  /*   } */
-  /* } */
-  //}
-
-  /* std::cout << "Captured photons: " << photons_captured << "\n"; */
   publishSensorMsg(photons_captured);
-  bv.publish();
-
   return ros::Time::now();
 }
 //}
 
-/* PublisherLoop //{ */
-void Timepix::PublisherLoop() {
+/* publisherLoop //{ */
+void Timepix::publisherLoop() {
   while (!terminated) {
     auto sim_start = ros::Time::now();
     publishDiagnostics();
-    auto sim_end      = Simulate(sim_start);
+    auto sim_end      = simulate();
     auto sim_duration = sim_end - sim_start;
-    /* ROS_INFO("[Timepix%u]: Simulation took %d nsec", model_->GetId(), sim_duration.nsec); */
     (ros::Duration(exposition_seconds) - sim_duration).sleep();
   }
 }
@@ -338,6 +305,9 @@ std::vector<Triplet> Timepix::calculateSideProperties(SourceAbstraction s) {
     Eigen::Vector3d side_normal = (sides[i].b() - sides[i].a()).cross(sides[i].d() - sides[i].a());
     if (side_normal.dot(s.getRelativePosition()) > 0) {
       double solid_angle = mrs_lib::rectSolidAngle(sides[i], s.getRelativePosition());
+      if (solid_angle < 0) {
+        ROS_ERROR("[%s]: Solid angle negative! %.10f", ros::this_node::getName().c_str(), solid_angle);
+      }
       if (solid_angle == solid_angle) {  // NaN check
         double  apparent_activity = (s.getActivity() / 4 * M_PI) * solid_angle;
         Triplet triplet;
@@ -392,8 +362,6 @@ double Timepix::traceEnvironmentAbsorption(SourceAbstraction sa) {
         double obstacle_track  = (intersections[0] - intersections[1]).norm();
         double obstacle_mac    = calculateMassAttCoeff(sa.getEnergy(), o->getMaterial(), AttenuationType::MASS_ENERGY);
         double absorption_prob = calculateAbsorptionProb(obstacle_track, obstacle_mac, o->getDensity());
-        /* std::cout << "Obstacle" << o->getId() << " track: " << obstacle_track << ", MAC: " << obstacle_mac << ", density: " << density */
-        /* << ", absorption: " << (absorption_prob * 100) << "\n"; */
         transmission *= (1.0 - absorption_prob);
         cumulative_obstacle_track += obstacle_track;
       }
@@ -402,7 +370,7 @@ double Timepix::traceEnvironmentAbsorption(SourceAbstraction sa) {
   double air_track       = sa.getRelativePosition().norm() - cumulative_obstacle_track;
   double air_mac         = sa.getAirMassAttCoeff();
   double absorption_prob = calculateAbsorptionProb(air_track, air_mac, air_density);
-  /* std::cout << "Air track: " << air_track << ", MAC: " << air_mac << ", density: " << density << ", absorption: " << (absorption_prob * 100) << "\n"; */
+  /* std::cout << "Actual environment absorption: " << absorption_prob << "\n"; */
   transmission *= (1.0 - absorption_prob);
   return transmission;
 }
@@ -545,7 +513,6 @@ void Timepix::publishDiagnostics() {
     msg.obstacles.push_back(od);
   }
   //}
-
   diagnostics_publisher.publish(msg);
   debugVisualize();
 }
@@ -571,16 +538,16 @@ void Timepix::debugVisualize() {
     debug_visualizer.addPoint(sources[i].getRelativePosition(), GREEN);
 
     // draw participating obstacles
-    auto participating_obstacles = traceObstaclesId(sources[i]);
+    /* auto participating_obstacles = traceObstaclesId(sources[i]); */
     /* std::cout << "Traced obstacles:\n"; */
     /* for (unsigned int j = 0; j < participating_obstacles.size(); j++) { */
-    /*   std::cout << "Obstacle" << participating_obstacles[j] << "\n"; */
+    /* std::cout << "Obstacle" << participating_obstacles[j] << "\n"; */
     /* } */
   }
 
   for (unsigned int i = 0; i < obstacles.size(); i++) {
     debug_visualizer.addCuboid(obstacles[i].getRelativeCuboid(), ORANGE, true);
-    /* debug_visualizer.addCuboid(obstacles[i].getRelativeCuboid(), BLACK, false); */
+    debug_visualizer.addCuboid(obstacles[i].getRelativeCuboid(), BLACK, false);
   }
 
 
