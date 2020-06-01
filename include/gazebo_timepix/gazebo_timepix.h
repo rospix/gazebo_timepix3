@@ -76,11 +76,10 @@ private:
   void          debugVisualize();
   void          publishSensorMsg(int particle_count);
 
-  std::vector<Triplet> calculateSideProperties(SourceAbstraction s);
+  std::vector<SideProperty> calculateSideProperties(SourceAbstraction s);
 
   double exposition_seconds = 1.0;
   double density;
-  double diagonal_length;
 
   double air_density;
 

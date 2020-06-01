@@ -119,8 +119,8 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
       source->setRelativePosition(targetRelativePosition(model_->WorldPose(), source_world_pos));
       source->setSideProperties(calculateSideProperties(*source));
       std::vector<double> apparent_activities;
-      for (auto side_triplet = source->getSideProperties().begin(); side_triplet != source->getSideProperties().end(); side_triplet++) {
-        apparent_activities.push_back(side_triplet->apparent_activity);
+      for (auto side_property = source->getSideProperties().begin(); side_property != source->getSideProperties().end(); side_property++) {
+        apparent_activities.push_back(side_property->apparent_activity);
       }
       sources_mutex.unlock();
       return;
@@ -132,10 +132,9 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
   ROS_INFO("[Timepix%u]: Newly registered RadiationSource%u", model_->GetId(), msg->id());
   Eigen::Vector3d source_world_pos(msg->x(), msg->y(), msg->z());
 
-  double            mass_att_coeff            = calculateMassAttCoeff(msg->energy(), material, AttenuationType::MASS_ENERGY);
-  double            diagnonal_absorption_prob = calculateAbsorptionProb(diagonal_length, mass_att_coeff, density);
-  double            air_mass_att_coeff        = calculateMassAttCoeff(msg->energy(), "air", AttenuationType::MASS_ENERGY);
-  SourceAbstraction s(msg->id(), msg->material(), msg->activity(), msg->energy(), mass_att_coeff, air_mass_att_coeff, diagnonal_absorption_prob,
+  double            mass_att_coeff     = calculateMassAttCoeff(msg->energy(), material, AttenuationType::MASS_ENERGY);
+  double            air_mass_att_coeff = calculateMassAttCoeff(msg->energy(), "air", AttenuationType::MASS_ENERGY);
+  SourceAbstraction s(msg->id(), msg->material(), msg->activity(), msg->energy(), mass_att_coeff, air_mass_att_coeff,
                       targetRelativePosition(model_->WorldPose(), source_world_pos));
   s.setSideProperties(calculateSideProperties(s));
   sources.push_back(s);
@@ -236,7 +235,10 @@ void Timepix::terminationCallback(TerminationConstPtr &msg) {
 /* simulate //{ */
 ros::Time Timepix::simulate() {
   int photons_captured = 0;
-  int rays_cast        = 0;
+  /* DEBUG */
+  int DEBUG_all_photons_that_reach_detector = 0;
+  /* DEBUG */
+  int rays_cast = 0;
 
   for (auto source = sources.begin(); source != sources.end(); source++) {
     // get num of photons to be simulated
@@ -245,15 +247,9 @@ ros::Time Timepix::simulate() {
     mrs_lib::Ray    r                        = mrs_lib::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
     double          environment_transmission = traceEnvironmentAbsorption(*source);
 
-    std::vector<Triplet> side_properties = source->getSideProperties();
+    std::vector<SideProperty> side_properties = source->getSideProperties();
     for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
-      int num_photons = (int)(side->apparent_activity * exposition_seconds * environment_transmission * side->diagnonal_absorption_prob);
-
-      /* if (num_photons < 0) { */
-      /*   ROS_ERROR("[%s]: neco je spatne!", ros::this_node::getName().c_str()); */
-      /*   ROS_INFO("[%s]: Side[%d]: apparent activity: %.4f, diag_abs_prob: %.4f, env_trans: %.4f", ros::this_node::getName().c_str(), side->side_index, */
-      /*            side->apparent_activity, side->diagnonal_absorption_prob, environment_transmission); */
-      /* } */
+      int num_photons = (int)(side->apparent_activity * exposition_seconds * environment_transmission);
 
       // generate N photons
       for (int i = 0; i < num_photons; i++) {
@@ -271,16 +267,26 @@ ros::Time Timepix::simulate() {
             // ray hit, now calculate detection probability
 
             double track_length = (*intersect2 - intersect1).norm();
-            double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density) / side->diagnonal_absorption_prob;
-            double coin_flip    = rand_dbl(rand_gen);
+            double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density);
+            /* DEBUG */
+            double pe_prob_DEBUG = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density);
+            std::cout << "Detector abs prob: " << pe_prob_DEBUG << "\n";
+            std::cout << "Track length: " << track_length << "\n";
+            std::cout << "MAC: " << source->getMassAttCoeff() << ", DENS: " << density << "\n";
+            /* DEBUG */
+            double coin_flip = rand_dbl(rand_gen);
             if (coin_flip < pe_prob) {
               photons_captured++;
             }
+            /* DEBUG */
+            DEBUG_all_photons_that_reach_detector++;
+            /* DEBUG */
           }
         }
       }
     }
   }
+  std::cout << "Detectable stuff: " << (DEBUG_all_photons_that_reach_detector / exposition_seconds) << " Bq\n";
   publishSensorMsg(photons_captured);
   return ros::Time::now();
 }
@@ -299,8 +305,8 @@ void Timepix::publisherLoop() {
 //}
 
 /* calculateSideProperties //{ */
-std::vector<Triplet> Timepix::calculateSideProperties(SourceAbstraction s) {
-  std::vector<Triplet> ret;
+std::vector<SideProperty> Timepix::calculateSideProperties(SourceAbstraction s) {
+  std::vector<SideProperty> ret;
   for (int i = 0; i < 6 && ret.size() <= 3; i++) {
     Eigen::Vector3d side_normal = (sides[i].b() - sides[i].a()).cross(sides[i].d() - sides[i].a());
     if (side_normal.dot(s.getRelativePosition()) > 0) {
@@ -309,12 +315,11 @@ std::vector<Triplet> Timepix::calculateSideProperties(SourceAbstraction s) {
         ROS_ERROR("[%s]: Solid angle negative! %.10f", ros::this_node::getName().c_str(), solid_angle);
       }
       if (solid_angle == solid_angle) {  // NaN check
-        double  apparent_activity = (s.getActivity() / 4 * M_PI) * solid_angle;
-        Triplet triplet;
-        triplet.side_index                = i;
-        triplet.apparent_activity         = apparent_activity;
-        triplet.diagnonal_absorption_prob = calculateAbsorptionProb(diagonal_length, s.getMassAttCoeff(), density);
-        ret.push_back(triplet);
+        double       apparent_activity = (s.getActivity() / 4 * M_PI) * solid_angle;
+        SideProperty sp;
+        sp.side_index        = i;
+        sp.apparent_activity = apparent_activity;
+        ret.push_back(sp);
       }
     }
   }
@@ -337,13 +342,12 @@ void Timepix::buildSensorCuboid() {
   Eigen::Vector3d G(-size[0] / 2.0, -size[1] / 2.0, size[2] / 2.0);
   Eigen::Vector3d H(-size[0] / 2.0, size[1] / 2.0, size[2] / 2.0);
 
-  sides[FRONT]    = mrs_lib::Rectangle(A, B, C, D);
-  sides[BACK]     = mrs_lib::Rectangle(E, F, G, H);
-  sides[LEFT]     = mrs_lib::Rectangle(B, E, H, C);
-  sides[RIGHT]    = mrs_lib::Rectangle(F, A, D, G);
-  sides[BOTTOM]   = mrs_lib::Rectangle(F, E, B, A);
-  sides[TOP]      = mrs_lib::Rectangle(D, C, H, G);
-  diagonal_length = (C - F).norm();
+  sides[FRONT]  = mrs_lib::Rectangle(A, B, C, D);
+  sides[BACK]   = mrs_lib::Rectangle(E, F, G, H);
+  sides[LEFT]   = mrs_lib::Rectangle(B, E, H, C);
+  sides[RIGHT]  = mrs_lib::Rectangle(F, A, D, G);
+  sides[BOTTOM] = mrs_lib::Rectangle(F, E, B, A);
+  sides[TOP]    = mrs_lib::Rectangle(D, C, H, G);
 }
 //}
 
