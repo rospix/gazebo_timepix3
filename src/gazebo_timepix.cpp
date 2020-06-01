@@ -118,10 +118,6 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
       Eigen::Vector3d source_world_pos(msg->x(), msg->y(), msg->z());
       source->setRelativePosition(targetRelativePosition(model_->WorldPose(), source_world_pos));
       source->setSideProperties(calculateSideProperties(*source));
-      std::vector<double> apparent_activities;
-      for (auto side_property = source->getSideProperties().begin(); side_property != source->getSideProperties().end(); side_property++) {
-        apparent_activities.push_back(side_property->apparent_activity);
-      }
       sources_mutex.unlock();
       return;
     }
@@ -235,9 +231,6 @@ void Timepix::terminationCallback(TerminationConstPtr &msg) {
 /* simulate //{ */
 ros::Time Timepix::simulate() {
   int photons_captured = 0;
-  /* DEBUG */
-  int DEBUG_all_photons_that_reach_detector = 0;
-  /* DEBUG */
   int rays_cast = 0;
 
   for (auto source = sources.begin(); source != sources.end(); source++) {
@@ -245,21 +238,21 @@ ros::Time Timepix::simulate() {
     // trace obstacles
     Eigen::Vector3d source_pos               = source->getRelativePosition();
     mrs_lib::Ray    r                        = mrs_lib::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
-    double          environment_transmission = traceEnvironmentAbsorption(*source);
+    double          environment_transmission = traceEnvironmentTransmission(*source);
 
     std::vector<SideProperty> side_properties = source->getSideProperties();
     for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
-      int num_photons = (int)(side->apparent_activity * exposition_seconds * environment_transmission);
+      int num_photons = (int)(side->second * exposition_seconds * environment_transmission);
 
       // generate N photons
       for (int i = 0; i < num_photons; i++) {
-        Eigen::Vector3d intersect1 = sampleRectangle(sides[side->side_index]);
+        Eigen::Vector3d intersect1 = sampleRectangle(sides[side->first]);
 
         mrs_lib::Ray r = mrs_lib::Ray::twopointCast(source->getRelativePosition(), intersect1);
         rays_cast++;
         // for each photon check the collision with other sides of the sensor
         for (int j = 0; j < 6; j++) {
-          if (j == side->side_index) {
+          if (j == side->second) {
             continue;
           }
           auto intersect2 = sides[j].intersectionRay(r);
@@ -268,25 +261,15 @@ ros::Time Timepix::simulate() {
 
             double track_length = (*intersect2 - intersect1).norm();
             double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density);
-            /* DEBUG */
-            double pe_prob_DEBUG = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density);
-            std::cout << "Detector abs prob: " << pe_prob_DEBUG << "\n";
-            std::cout << "Track length: " << track_length << "\n";
-            std::cout << "MAC: " << source->getMassAttCoeff() << ", DENS: " << density << "\n";
-            /* DEBUG */
             double coin_flip = rand_dbl(rand_gen);
             if (coin_flip < pe_prob) {
               photons_captured++;
             }
-            /* DEBUG */
-            DEBUG_all_photons_that_reach_detector++;
-            /* DEBUG */
           }
         }
       }
     }
   }
-  std::cout << "Detectable stuff: " << (DEBUG_all_photons_that_reach_detector / exposition_seconds) << " Bq\n";
   publishSensorMsg(photons_captured);
   return ros::Time::now();
 }
@@ -307,19 +290,17 @@ void Timepix::publisherLoop() {
 /* calculateSideProperties //{ */
 std::vector<SideProperty> Timepix::calculateSideProperties(SourceAbstraction s) {
   std::vector<SideProperty> ret;
-  for (int i = 0; i < 6 && ret.size() <= 3; i++) {
-    Eigen::Vector3d side_normal = (sides[i].b() - sides[i].a()).cross(sides[i].d() - sides[i].a());
+  for (int idx = 0; idx < 6; idx++) {
+    Eigen::Vector3d side_normal = (sides[idx].b() - sides[idx].a()).cross(sides[idx].d() - sides[idx].a());
     if (side_normal.dot(s.getRelativePosition()) > 0) {
-      double solid_angle = mrs_lib::rectSolidAngle(sides[i], s.getRelativePosition());
-      if (solid_angle < 0) {
-        ROS_ERROR("[%s]: Solid angle negative! %.10f", ros::this_node::getName().c_str(), solid_angle);
-      }
-      if (solid_angle == solid_angle) {  // NaN check
-        double       apparent_activity = (s.getActivity() / 4 * M_PI) * solid_angle;
-        SideProperty sp;
-        sp.side_index        = i;
-        sp.apparent_activity = apparent_activity;
-        ret.push_back(sp);
+      double       solid_angle       = mrs_lib::rectSolidAngle(sides[idx], s.getRelativePosition());
+      double       apparent_activity = (s.getActivity() / (4 * M_PI)) * solid_angle;
+      SideProperty sp;
+      sp.first  = idx;
+      sp.second = apparent_activity;
+      ret.push_back(sp);
+      if (ret.size() > 2) {
+        break;
       }
     }
   }
@@ -351,8 +332,8 @@ void Timepix::buildSensorCuboid() {
 }
 //}
 
-/* traceEnvironmentAbsorption//{ */
-double Timepix::traceEnvironmentAbsorption(SourceAbstraction sa) {
+/* traceEnvironmentTransmission//{ */
+double Timepix::traceEnvironmentTransmission(SourceAbstraction sa) {
   Eigen::Vector3d source_position = sa.getRelativePosition();
 
   mrs_lib::Ray r = mrs_lib::Ray::twopointCast(Eigen::Vector3d::Zero(), source_position);
@@ -374,7 +355,6 @@ double Timepix::traceEnvironmentAbsorption(SourceAbstraction sa) {
   double air_track       = sa.getRelativePosition().norm() - cumulative_obstacle_track;
   double air_mac         = sa.getAirMassAttCoeff();
   double absorption_prob = calculateAbsorptionProb(air_track, air_mac, air_density);
-  /* std::cout << "Actual environment absorption: " << absorption_prob << "\n"; */
   transmission *= (1.0 - absorption_prob);
   return transmission;
 }
@@ -481,19 +461,19 @@ void Timepix::publishDiagnostics() {
     sd.relative_pos.y = s->getRelativePosition().y();
     sd.relative_pos.z = s->getRelativePosition().z();
 
-    int i = 0;
-    for (auto side = s->getSideProperties().begin(); side != s->getSideProperties().end(); side++) {
-      if (i == 0) {
-        sd.exposed_sides.x       = side->side_index;
-        sd.apparent_activities.x = side->apparent_activity;
-      } else if (i == 1) {
-        sd.exposed_sides.y       = side->side_index;
-        sd.apparent_activities.y = side->apparent_activity;
+    int  index           = 0;
+    auto side_properties = s->getSideProperties();
+    for (auto sp = side_properties.begin(); sp != side_properties.end(); sp++, index++) {
+      if (index == 0) {
+        sd.exposed_sides.x       = sp->first;
+        sd.apparent_activities.x = sp->second;
+      } else if (index == 1) {
+        sd.exposed_sides.y       = sp->first;
+        sd.apparent_activities.y = sp->second;
       } else {
-        sd.exposed_sides.z       = side->side_index;
-        sd.apparent_activities.z = side->apparent_activity;
+        sd.exposed_sides.z       = sp->first;
+        sd.apparent_activities.z = sp->second;
       }
-      i++;
     }
     msg.sources.push_back(sd);
   }

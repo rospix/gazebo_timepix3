@@ -107,7 +107,7 @@ private:
   // param control
   bool setExpositionCallback(mrs_msgs::Float64SrvRequest &req, mrs_msgs::Float64SrvResponse &res);
 
-  double                    traceEnvironmentAbsorption(SourceAbstraction sa);
+  double                    traceEnvironmentTransmission(SourceAbstraction sa);
   std::vector<unsigned int> traceObstaclesId(SourceAbstraction sa);
 
   ros::NodeHandle    ros_node;

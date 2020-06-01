@@ -7,25 +7,7 @@
 
 /* This library provides wrapper objects for the 3D objects interacting with the simulated radiation */
 
-/* SideProperty struct //{ */
-struct SideProperty 
-{
-  int    side_index;
-  double apparent_activity;
-
-  bool operator>(const SideProperty &sp) const {
-    return side_index > sp.side_index;
-  }
-
-  bool operator<(const SideProperty &sp) const {
-    return side_index < sp.side_index;
-  }
-
-  bool operator==(const SideProperty &sp) const {
-    return side_index == sp.side_index;
-  }
-};
-//}
+typedef std::pair<int, double> SideProperty;
 
 /* SourceAbstraction //{ */
 class SourceAbstraction {
@@ -37,7 +19,7 @@ private:
   std::string  material;
   double       air_mass_att_coeff;  // atttenuation of emitted particles by air
 
-  Eigen::Vector3d      relative_position;
+  Eigen::Vector3d           relative_position;
   std::vector<SideProperty> side_properties;
   // int - index of exposed Timepix side
   // double - apparent activity of this source for indexed side
@@ -123,13 +105,13 @@ SourceAbstraction::~SourceAbstraction() {
 
 SourceAbstraction::SourceAbstraction(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff,
                                      double air_mass_att_coeff, Eigen::Vector3d relative_position) {
-  this->gazebo_id                = gazebo_id;
-  this->material                 = material;
-  this->activity                 = activity;
-  this->energy                   = energy;
-  this->mass_att_coeff           = mass_att_coeff;
-  this->air_mass_att_coeff       = air_mass_att_coeff;
-  this->relative_position        = relative_position;
+  this->gazebo_id          = gazebo_id;
+  this->material           = material;
+  this->activity           = activity;
+  this->energy             = energy;
+  this->mass_att_coeff     = mass_att_coeff;
+  this->air_mass_att_coeff = air_mass_att_coeff;
+  this->relative_position  = relative_position;
 }
 //}
 
