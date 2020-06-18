@@ -62,7 +62,7 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   model_ = _model;
   buildSensorCuboid();
   local_frame << model_->GetName().c_str() << "/timepix_origin";
-  global_frame << model_->GetName().c_str() << "/local_origin";
+  global_frame << model_->GetName().c_str() << "/gps_origin";
   density     = getMaterialDensity(material);
   air_density = getMaterialDensity("air");
 
@@ -79,7 +79,7 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   ros::init(argc, argv, "gazebo_timepix", ros::init_options::NoSigintHandler);
   ros_node = ros::NodeHandle("~");
 
-  updateConnection_ = event::Events::ConnectWorldUpdateBegin(boost::bind(&Timepix::onWorldUpdate, this, _1));
+  updateConnection_ = event::Events::ConnectWorldUpdateEnd(boost::bind(&Timepix::onWorldLateUpdate, this));
 
   // gazebo communication
   sources_sub_     = gazebo_node_->Subscribe("~/radiation/sources", &Timepix::sourcesCallback, this, 1);
@@ -231,7 +231,7 @@ void Timepix::terminationCallback(TerminationConstPtr &msg) {
 /* simulate //{ */
 ros::Time Timepix::simulate() {
   int photons_captured = 0;
-  int rays_cast = 0;
+  int rays_cast        = 0;
 
   for (auto source = sources.begin(); source != sources.end(); source++) {
     // get num of photons to be simulated
@@ -261,7 +261,7 @@ ros::Time Timepix::simulate() {
 
             double track_length = (*intersect2 - intersect1).norm();
             double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density);
-            double coin_flip = rand_dbl(rand_gen);
+            double coin_flip    = rand_dbl(rand_gen);
             if (coin_flip < pe_prob) {
               photons_captured++;
             }
@@ -380,8 +380,8 @@ std::vector<unsigned int> Timepix::traceObstaclesId(SourceAbstraction sa) {
 }
 //}
 
-/* onWorldUpdate //{ */
-void Timepix::onWorldUpdate([[maybe_unused]] const common::UpdateInfo &upd) {
+/* onWorldLateUpdate //{ */
+void Timepix::onWorldLateUpdate() {
   tf::Transform  transform;
   tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
   tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());

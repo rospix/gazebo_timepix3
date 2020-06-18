@@ -102,7 +102,7 @@ private:
   void sourcesCallback(RadiationSourceConstPtr &msg);
   void obstaclesCallback(RadiationObstacleConstPtr &msg);
   void terminationCallback(TerminationConstPtr &msg);
-  void onWorldUpdate(const common::UpdateInfo &upd);
+  void onWorldLateUpdate();
 
   // param control
   bool setExpositionCallback(mrs_msgs::Float64SrvRequest &req, mrs_msgs::Float64SrvResponse &res);
