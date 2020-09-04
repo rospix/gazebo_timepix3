@@ -114,8 +114,8 @@ private:
   ros::Publisher     ros_publisher, diagnostics_publisher;
   ros::ServiceServer set_exposition_server;
 
-  BatchVisualizer debug_visualizer;
-  BatchVisualizer bv;
+  mrs_lib::BatchVisualizer debug_visualizer;
+  mrs_lib::BatchVisualizer bv;
 
   Eigen::Vector3d sampleRectangle(mrs_lib::Rectangle r);
 

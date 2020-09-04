@@ -97,7 +97,7 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   ss << "/" << model_->GetName() << "/timepix/set_exposition";
   set_exposition_server = ros_node.advertiseService(ss.str().c_str(), &Timepix::setExpositionCallback, this);
 
-  debug_visualizer = BatchVisualizer(ros_node, "debug_visualizer", local_frame.str());
+  debug_visualizer = mrs_lib::BatchVisualizer(ros_node, "debug_visualizer", local_frame.str());
   debug_visualizer.setPointsScale(0.3);
 
   terminated       = false;
