@@ -67,6 +67,8 @@ private:
   std::stringstream        global_frame;
   std::stringstream        local_frame;
 
+  std::string _package_path_;
+
   bool          terminated;
   boost::thread publisher_thread;
   void          publisherLoop();

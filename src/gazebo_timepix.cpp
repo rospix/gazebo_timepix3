@@ -66,6 +66,7 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   density     = getMaterialDensity(material);
   air_density = getMaterialDensity("air");
 
+  _package_path_ = ros::package::getPath("gazebo_timepix");
 
   rand_dbl = std::uniform_real_distribution<double>(0, 1);
 
