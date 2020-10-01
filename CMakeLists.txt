@@ -3,17 +3,14 @@ project(gazebo_timepix)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color")
 
-include(GNUInstallDirs)
-
-find_package(catkin REQUIRED COMPONENTS
+find_package(catkin REQUIRED
   roscpp
+  std_msgs
   gazebo_ros
-  image_transport
-  camera_info_manager
-  cv_bridge
-  rostest
+  radiation_utils
+  mrs_msgs
+  mrs_lib
   gazebo_rad_msgs
-  geometry_visual_utils
   )
 
 # include Eigen3
@@ -21,41 +18,22 @@ find_package(Eigen3 REQUIRED)
 set(Eigen_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
 set(Eigen_LIBRARIES ${Eigen_LIBRARIES})
 
-# find_package(Boost REQUIRED COMPONENTS thread)
 find_package(gazebo REQUIRED)
-find_package(Threads REQUIRED)
-#find_package(sitl_gazebo REQUIRED)
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GAZEBO_CXX_FLAGS}")
 
 catkin_package(
   INCLUDE_DIRS include
-  DEPENDS Eigen roscpp gazebo_ros gazebo_rad_msgs
-  CATKIN_DEPENDS roscpp geometry_visual_utils
+  DEPENDS Eigen 
+  CATKIN_DEPENDS roscpp std_msgs mrs_msgs mrs_lib gazebo_ros gazebo_rad_msgs radiation_utils 
   )
 
 include_directories(
   include
-  ${CMAKE_CURRENT_BINARY_DIR}
   ${catkin_INCLUDE_DIRS}
   ${GAZEBO_INCLUDE_DIRS}
-  ${Eigen_INCLUDE_DIRS}
-  # ${Boost_INCLUDE_DIR}
   )
 
 link_directories(${GAZEBO_LIBRARY_DIRS})
 
-add_library(
-  ${PROJECT_NAME}
-  src/timepix.cpp
-  src/radiation_utils.cpp
-  src/materials.cpp
-  )
-
-target_link_libraries(${PROJECT_NAME}
-  ${catkin_LIBRARIES}
-  ${GAZEBO_LIBRARIES}
-  ${Eigen_LIBRARIES}
-  )
-
-add_dependencies(${PROJECT_NAME} ${catkin_EXPORTED_TARGETS})
+add_library(gazebo_timepix SHARED src/gazebo_timepix.cpp)
+target_link_libraries(gazebo_timepix ${catkin_LIBRARIES} ${Eigen_LIBRARIES})
+add_dependencies(gazebo_timepix ${catkin_EXPORTED_TARGETS})
