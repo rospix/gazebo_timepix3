@@ -6,7 +6,8 @@
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Geometry>
 #include <ignition/math.hh>
-#include <mrs_lib/geometry_utils.h>
+#include <mrs_lib/geometry/misc.h>
+#include <mrs_lib/geometry/shapes.h>
 #include <radiation_utils/physics.h>
 #include <gazebo_timepix/source_abstraction.h>
 
@@ -24,7 +25,7 @@ private:
   Eigen::Vector3d    size;
   double             density;
 
-  mrs_lib::Cuboid relative_cuboid;  // TODO update to allow different shapes of obstacles
+  mrs_lib::geometry::Cuboid relative_cuboid;  // TODO update to allow different shapes of obstacles
 
 public:
   ObstacleAbstraction();
@@ -114,12 +115,12 @@ public:
     return size;
   }
 
-  mrs_lib::Cuboid getRelativeCuboid() {
+  mrs_lib::geometry::Cuboid getRelativeCuboid() {
     return relative_cuboid;
   }
 
   void updateRelativeCuboid() {
-    relative_cuboid = mrs_lib::Cuboid(relative_position, size, relative_orientation);
+    relative_cuboid = mrs_lib::geometry::Cuboid(relative_position, size, relative_orientation);
   }
 
   double getDensity() {

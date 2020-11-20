@@ -24,7 +24,7 @@
 
 // mrs libraries
 #include <mrs_msgs/Float64Srv.h>
-#include <mrs_lib/geometry_utils.h>
+#include <mrs_lib/geometry/misc.h>
 #include <mrs_lib/batch_visualizer.h>
 
 // package libraries
@@ -90,7 +90,7 @@ private:
 
   std::vector<SourceAbstraction>   sources;
   std::vector<ObstacleAbstraction> obstacles;
-  std::vector<mrs_lib::Rectangle>  sides;
+  std::vector<mrs_lib::geometry::Rectangle>  sides;
 
   physics::ModelPtr       model_;
   transport::NodePtr      gazebo_node_;
@@ -119,7 +119,7 @@ private:
   mrs_lib::BatchVisualizer debug_visualizer;
   mrs_lib::BatchVisualizer bv;
 
-  Eigen::Vector3d sampleRectangle(mrs_lib::Rectangle r);
+  Eigen::Vector3d sampleRectangle(mrs_lib::geometry::Rectangle r);
 
   // RNG stuff
   std::mt19937                           rand_gen;
