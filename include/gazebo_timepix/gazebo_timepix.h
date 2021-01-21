@@ -97,6 +97,7 @@ private:
 
   transport::SubscriberPtr sources_sub_, obstacles_sub_, termination_sub_;
   tf::TransformBroadcaster transform_broadcaster;
+  ros::Time last_tf_time;
 
   event::ConnectionPtr updateConnection_;
 

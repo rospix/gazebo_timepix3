@@ -66,8 +66,8 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   density     = getMaterialDensity(material);
   air_density = getMaterialDensity("air");
 
-
-  rand_dbl = std::uniform_real_distribution<double>(0, 1);
+  rand_dbl     = std::uniform_real_distribution<double>(0, 1);
+  last_tf_time = ros::Time::now();
 
   // init gazebo node
   gazebo_node_ = transport::NodePtr(new transport::Node());
@@ -236,9 +236,9 @@ ros::Time Timepix::simulate() {
   for (auto source = sources.begin(); source != sources.end(); source++) {
     // get num of photons to be simulated
     // trace obstacles
-    Eigen::Vector3d      source_pos               = source->getRelativePosition();
+    Eigen::Vector3d        source_pos               = source->getRelativePosition();
     mrs_lib::geometry::Ray r                        = mrs_lib::geometry::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
-    double               environment_transmission = traceEnvironmentTransmission(*source);
+    double                 environment_transmission = traceEnvironmentTransmission(*source);
 
     std::vector<SideProperty> side_properties = source->getSideProperties();
     for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
@@ -382,12 +382,16 @@ std::vector<unsigned int> Timepix::traceObstaclesId(SourceAbstraction sa) {
 
 /* onWorldLateUpdate //{ */
 void Timepix::onWorldLateUpdate() {
-  tf::Transform  transform;
-  tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
-  tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
-  transform.setOrigin(origin);
-  transform.setRotation(quat);
-  transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), global_frame.str(), local_frame.str()));
+  ros::Time t_now = ros::Time::now();
+  if (t_now > last_tf_time) {
+    tf::Transform  transform;
+    tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
+    tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
+    transform.setOrigin(origin);
+    transform.setRotation(quat);
+    transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), global_frame.str(), local_frame.str()));
+    last_tf_time = ros::Time::now();
+  }
 }
 //}
 
