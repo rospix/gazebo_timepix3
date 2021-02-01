@@ -1,13 +1,14 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.1.2)
 project(gazebo_timepix)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(catkin REQUIRED
   roscpp
   std_msgs
   gazebo_ros
-  radiation_utils
+  rad_utils
   mrs_msgs
   mrs_lib
   gazebo_rad_msgs
@@ -22,8 +23,8 @@ find_package(gazebo REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-  DEPENDS Eigen 
-  CATKIN_DEPENDS roscpp std_msgs mrs_msgs mrs_lib gazebo_ros gazebo_rad_msgs radiation_utils 
+  DEPENDS Eigen
+  CATKIN_DEPENDS roscpp std_msgs mrs_msgs mrs_lib gazebo_ros gazebo_rad_msgs rad_utils
   )
 
 include_directories(

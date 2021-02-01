@@ -24,7 +24,7 @@
   <depend>gazebo_rad_msgs</depend>
   <depend>geometry_visual_utils</depend>
   <depend>message_runtime</depend>
-  <depend>radiation_utils</depend>
+  <depend>rad_utils</depend>
   <depend>mrs_msgs</depend>
   <depend>mrs_lib</depend>
 
