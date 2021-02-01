@@ -8,7 +8,7 @@
 #include <ignition/math.hh>
 #include <mrs_lib/geometry/shapes.h>
 #include <mrs_lib/geometry/misc.h>
-#include <radiation_utils/physics.h>
+#include <rad_utils/physics.h>
 #include <gazebo_timepix/source_abstraction.h>
 
 

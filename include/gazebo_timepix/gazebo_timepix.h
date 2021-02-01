@@ -12,6 +12,8 @@
 #include <fstream>
 #include <mutex>
 
+#include <rad_utils/geometry.h>
+
 // ros and gazebo libraries
 #include <gazebo/gazebo.hh>
 #include <gazebo/physics/physics.hh>
@@ -32,7 +34,7 @@
 #include <gazebo_timepix/source_abstraction.h>
 #include <gazebo_timepix/obstacle_abstraction.h>
 
-#include <radiation_utils/physics.h>
+#include <rad_utils/physics.h>
 
 // ros and gazebo messages
 #include <gazebo_rad_msgs/Timepix.h>
