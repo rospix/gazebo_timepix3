@@ -24,7 +24,6 @@ catkin_package(
   INCLUDE_DIRS include
   DEPENDS Eigen 
   CATKIN_DEPENDS roscpp std_msgs mrs_msgs mrs_lib gazebo_ros gazebo_rad_msgs radiation_utils 
-  LIBRARIES mrs_lib
   )
 
 include_directories(

@@ -66,7 +66,9 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   density     = getMaterialDensity(material);
   air_density = getMaterialDensity("air");
 
-  rand_dbl     = std::uniform_real_distribution<double>(0, 1);
+  _package_path_ = ros::package::getPath("gazebo_timepix");
+
+  rand_dbl = std::uniform_real_distribution<double>(0, 1);
   last_tf_time = ros::Time::now();
 
   // init gazebo node
@@ -293,7 +295,7 @@ std::vector<SideProperty> Timepix::calculateSideProperties(SourceAbstraction s) 
   for (int idx = 0; idx < 6; idx++) {
     Eigen::Vector3d side_normal = (sides[idx].b() - sides[idx].a()).cross(sides[idx].d() - sides[idx].a());
     if (side_normal.dot(s.getRelativePosition()) > 0) {
-      double       solid_angle       = sides[idx].solidAngleRelativeTo(s.getRelativePosition());
+      double       solid_angle       = mrs_lib::geometry::rectSolidAngle(sides[idx], s.getRelativePosition());
       double       apparent_activity = (s.getActivity() / (4 * M_PI)) * solid_angle;
       SideProperty sp;
       sp.first  = idx;
