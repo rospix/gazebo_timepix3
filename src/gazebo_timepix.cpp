@@ -1,4 +1,52 @@
-#include <gazebo_timepix/gazebo_timepix.h>
+/* includes //{ */
+
+// std libraries
+#include <algorithm>
+#include <boost/thread.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/algorithm/string.hpp>
+#include <eigen3/Eigen/Core>
+#include <fstream>
+#include <mutex>
+
+#include <rad_utils/geometry.h>
+
+// ros and gazebo libraries
+#include <gazebo/gazebo.hh>
+#include <gazebo/physics/physics.hh>
+#include <gazebo/transport/transport.hh>
+
+#include <ros/ros.h>
+#include <ros/package.h>
+#include <sdf/sdf.hh>
+#include <tf/transform_broadcaster.h>
+
+// mrs libraries
+#include <mrs_msgs/Float64Srv.h>
+#include <mrs_lib/geometry/shapes.h>
+#include <mrs_lib/geometry/misc.h>
+#include <mrs_lib/batch_visualizer.h>
+
+#include <gazebo_timepix/source_abstraction.h>
+#include <gazebo_timepix/obstacle_abstraction.h>
+
+#include <rad_utils/physics.h>
+
+// ros and gazebo messages
+#include <gazebo_rad_msgs/Timepix.h>
+#include <gazebo_rad_msgs/DebugSetActivity.h>
+#include <gazebo_rad_msgs/DebugSetMaterial.h>
+
+#include <gazebo_rad_msgs/TimepixDiagnostics.h>
+#include <gazebo_rad_msgs/SourceDiagnostics.h>
+
+#include <gazebo_rad_msgs/Termination.pb.h>
+#include <gazebo_rad_msgs/RadiationSource.pb.h>
+#include <gazebo_rad_msgs/RadiationObstacle.pb.h>
+
+//}
+
+/* defines //{ */
 
 // index sides of the detector for convenience
 #define FRONT 0
@@ -15,9 +63,100 @@
 #define GRAY 0.7, 0.7, 0.7, 1.0
 #define BROWN 0.3, 0.2, 0.0, 1.0
 
-using namespace gazebo;
+typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource>   RadiationSourceConstPtr;
+typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationObstacle> RadiationObstacleConstPtr;
+typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::Termination>       TerminationConstPtr;
 
-/* Destructor //{ */
+//}
+
+// | --------------------- Timepix plugin --------------------- |
+
+/* class Timepix //{ */
+
+class GAZEBO_VISIBLE Timepix : public gazebo::ModelPlugin {
+public:
+  Timepix();
+  virtual ~Timepix();
+
+protected:
+  virtual void Load(gazebo::physics::ModelPtr _model, sdf::ElementPtr _sdf);
+
+private:
+  ros::NodeHandle ros_nh_;
+
+  ignition::math::Vector3d size;
+
+  std::string       material = "si";
+  std::stringstream global_frame;
+  std::stringstream local_frame;
+
+  std::string _package_path_;
+
+  bool          terminated;
+  boost::thread publisher_thread;
+  void          publisherLoop();
+  ros::Time     simulate();
+  void          buildSensorCuboid();
+  void          publishDiagnostics();
+  void          debugVisualize();
+  void          publishSensorMsg(int particle_count);
+
+  std::vector<SideProperty> calculateSideProperties(SourceAbstraction s);
+
+  double exposition_seconds = 1.0;
+  double density;
+
+  double air_density;
+
+  std::mutex sources_mutex;
+  std::mutex obstacles_mutex;
+
+  std::vector<SourceAbstraction>            sources;
+  std::vector<ObstacleAbstraction>          obstacles;
+  std::vector<mrs_lib::geometry::Rectangle> sides;
+
+  gazebo::physics::ModelPtr       model_;
+  gazebo::transport::NodePtr      gazebo_node_;
+  gazebo::transport::PublisherPtr gazebo_publisher_;
+
+  gazebo::transport::SubscriberPtr sources_sub_, obstacles_sub_, termination_sub_;
+  tf::TransformBroadcaster         transform_broadcaster;
+  ros::Time                        last_tf_time;
+
+  gazebo::event::ConnectionPtr updateConnection_;
+
+  void sourcesCallback(RadiationSourceConstPtr &msg);
+  void obstaclesCallback(RadiationObstacleConstPtr &msg);
+  void terminationCallback(TerminationConstPtr &msg);
+  void onWorldLateUpdate();
+
+  // param control
+  bool setExpositionCallback(mrs_msgs::Float64SrvRequest &req, mrs_msgs::Float64SrvResponse &res);
+
+  double                    traceEnvironmentTransmission(SourceAbstraction sa);
+  std::vector<unsigned int> traceObstaclesId(SourceAbstraction sa);
+
+  ros::Publisher     ros_publisher, diagnostics_publisher;
+  ros::ServiceServer set_exposition_server;
+
+  mrs_lib::BatchVisualizer debug_visualizer;
+  mrs_lib::BatchVisualizer bv;
+
+  Eigen::Vector3d sampleRectangle(mrs_lib::geometry::Rectangle r);
+
+  Eigen::Vector3d targetRelativePosition(const ignition::math::Pose3d &my_pose, const Eigen::Vector3d &target_pos);
+
+  // RNG stuff
+  std::mt19937                           rand_gen;
+  std::uniform_real_distribution<double> rand_dbl;
+};
+
+//}
+
+// | ---------------- Standard plugin interface --------------- |
+
+/* Destructor() //{ */
+
 Timepix::~Timepix() {
 
   // shutdown subscribers
@@ -29,16 +168,17 @@ Timepix::~Timepix() {
   gazebo_rad_msgs::msgs::Termination msg;
   msg.set_id(model_->GetId());
 
-
   // terminate
   terminated = true;
   publisher_thread.join();
   ROS_INFO("[Timepix%u]: Plugin terminated", model_->GetId());
 }
+
 //}
 
-/* Load //{ */
-void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
+/* Load() //{ */
+
+void Timepix::Load(gazebo::physics::ModelPtr _model, sdf::ElementPtr _sdf) {
 
   /* parse sdf params //{ */
   if (_sdf->HasElement("material")) {
@@ -68,20 +208,20 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
 
   _package_path_ = ros::package::getPath("gazebo_timepix");
 
-  rand_dbl = std::uniform_real_distribution<double>(0, 1);
+  rand_dbl     = std::uniform_real_distribution<double>(0, 1);
   last_tf_time = ros::Time::now();
 
   // init gazebo node
-  gazebo_node_ = transport::NodePtr(new transport::Node());
+  gazebo_node_ = gazebo::transport::NodePtr(new gazebo::transport::Node());
   gazebo_node_->Init();
 
   // init ros node
   int    argc = 0;
   char **argv = NULL;
   ros::init(argc, argv, "gazebo_timepix", ros::init_options::NoSigintHandler);
-  ros_node = ros::NodeHandle("~");
+  ros_nh_ = ros::NodeHandle("~");
 
-  updateConnection_ = event::Events::ConnectWorldUpdateEnd(boost::bind(&Timepix::onWorldLateUpdate, this));
+  updateConnection_ = gazebo::event::Events::ConnectWorldUpdateEnd(boost::bind(&Timepix::onWorldLateUpdate, this));
 
   // gazebo communication
   sources_sub_     = gazebo_node_->Subscribe("~/radiation/sources", &Timepix::sourcesCallback, this, 1);
@@ -89,26 +229,25 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   termination_sub_ = gazebo_node_->Subscribe("~/radiation/termination", &Timepix::terminationCallback, this, 1);
 
   // ros communication
-  std::stringstream ss;
-  ss << "/" << model_->GetName() << "/timepix/data";
-  ros_publisher = ros_node.advertise<gazebo_rad_msgs::Timepix>(ss.str().c_str(), 1);
-  ss.str(std::string());
-  ss << "/" << model_->GetName() << "/timepix/plugin_diagnostics";
-  diagnostics_publisher = ros_node.advertise<gazebo_rad_msgs::TimepixDiagnostics>(ss.str().c_str(), 1);
-  ss.str(std::string());
-  ss << "/" << model_->GetName() << "/timepix/set_exposition";
-  set_exposition_server = ros_node.advertiseService(ss.str().c_str(), &Timepix::setExpositionCallback, this);
+  ros_publisher         = ros_nh_.advertise<gazebo_rad_msgs::Timepix>("/" + model_->GetName() + "/timepix/data", 1);
+  diagnostics_publisher = ros_nh_.advertise<gazebo_rad_msgs::TimepixDiagnostics>("/" + model_->GetName() + "/timepix/plugin_diagnostics", 1);
+  set_exposition_server = ros_nh_.advertiseService("/" + model_->GetName() + "/timepix/set_exposition", &Timepix::setExpositionCallback, this);
 
-  debug_visualizer = mrs_lib::BatchVisualizer(ros_node, "debug_visualizer", local_frame.str());
+  debug_visualizer = mrs_lib::BatchVisualizer(ros_nh_, "debug_visualizer", local_frame.str());
   debug_visualizer.setPointsScale(0.3);
 
   terminated       = false;
   publisher_thread = boost::thread(boost::bind(&Timepix::publisherLoop, this));
+
   ROS_INFO("[Timepix%u]: Plugin initialized", model_->GetId());
 }
+
 //}
 
-/* sourcesCallback //{ */
+// | ------------------ Gazebo node callbacks ----------------- |
+
+/* sourcesCallback() //{ */
+
 void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
 
   sources_mutex.lock();
@@ -127,6 +266,7 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
   //}
 
   /* Handle newly registered source //{ */
+
   ROS_INFO("[Timepix%u]: Newly registered RadiationSource%u", model_->GetId(), msg->id());
   Eigen::Vector3d source_world_pos(msg->x(), msg->y(), msg->z());
 
@@ -135,14 +275,18 @@ void Timepix::sourcesCallback(RadiationSourceConstPtr &msg) {
   SourceAbstraction s(msg->id(), msg->material(), msg->activity(), msg->energy(), mass_att_coeff, air_mass_att_coeff,
                       targetRelativePosition(model_->WorldPose(), source_world_pos));
   s.setSideProperties(calculateSideProperties(s));
+
   sources.push_back(s);
+
   //}
 
   sources_mutex.unlock();
 }
+
 //}
 
-/* obstaclesCallback //{ */
+/* obstaclesCallback() //{ */
+
 void Timepix::obstaclesCallback(RadiationObstacleConstPtr &msg) {
 
   obstacles_mutex.lock();
@@ -196,46 +340,103 @@ void Timepix::obstaclesCallback(RadiationObstacleConstPtr &msg) {
 
   obstacles_mutex.unlock();
 }
+
 //}
 
-/* terminateCallback //{ */
+/* terminateCallback() //{ */
+
 void Timepix::terminationCallback(TerminationConstPtr &msg) {
 
   /* terminate source //{ */
+
   sources_mutex.lock();
+
   unsigned int sources_count = sources.size();
   sources.erase(std::remove(sources.begin(), sources.end(), msg->id()), sources.end());
+
   if (sources.size() != sources_count) {
+
     ROS_INFO("[Timepix%u]: No longer tracking RadiationSource%u", model_->GetId(), msg->id());
+
     for (auto it = obstacles.begin(); it != obstacles.end(); it++) {
       it->removeSource(msg->id());
     }
+
     sources_mutex.unlock();
     return;
   }
+
   sources_mutex.unlock();
+
   //}
 
   /* terminate obstacle //{ */
+
   obstacles_mutex.lock();
+
   unsigned int obstacles_count = obstacles.size();
   obstacles.erase(std::remove(obstacles.begin(), obstacles.end(), msg->id()), obstacles.end());
+
   if (obstacles_count != obstacles.size()) {
     ROS_INFO("[Timepix%u]: No longer tracking RadiationObstacle%u", model_->GetId(), msg->id());
     obstacles_mutex.unlock();
     return;
   }
+
   obstacles_mutex.unlock();
+
   //}
 }
+
 //}
 
-/* simulate //{ */
+/* onWorldLateUpdate() //{ */
+
+void Timepix::onWorldLateUpdate() {
+
+  ros::Time t_now = ros::Time::now();
+
+  if (t_now > last_tf_time) {
+
+    tf::Transform  transform;
+    tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
+    tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
+    transform.setOrigin(origin);
+    transform.setRotation(quat);
+    transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), global_frame.str(), local_frame.str()));
+    last_tf_time = ros::Time::now();
+  }
+}
+
+//}
+
+// | --------------------- Custom routines -------------------- |
+
+/* targetRelativePosition() //{ */
+
+Eigen::Vector3d Timepix::targetRelativePosition(const ignition::math::Pose3d &my_pose, const Eigen::Vector3d &target_pos) {
+
+  ignition::math::Vector3d    p = my_pose.Pos();
+  ignition::math::Quaterniond q = my_pose.Rot();
+
+  Eigen::Vector3d    my_world_pos(p.X(), p.Y(), p.Z());
+  Eigen::Quaterniond local2world = Eigen::Quaterniond(q.W(), q.X(), q.Y(), q.Z());
+  Eigen::Quaterniond world2local = local2world.inverse();
+
+  return world2local * (target_pos - my_world_pos);
+}
+
+//}
+
+/* simulate() //{ */
+
 ros::Time Timepix::simulate() {
+
   int photons_captured = 0;
   int rays_cast        = 0;
 
   for (auto source = sources.begin(); source != sources.end(); source++) {
+
     // get num of photons to be simulated
     // trace obstacles
     Eigen::Vector3d        source_pos               = source->getRelativePosition();
@@ -243,27 +444,35 @@ ros::Time Timepix::simulate() {
     double                 environment_transmission = traceEnvironmentTransmission(*source);
 
     std::vector<SideProperty> side_properties = source->getSideProperties();
+
     for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
+
       int num_photons = (int)(side->second * exposition_seconds * environment_transmission);
 
       // generate N photons
       for (int i = 0; i < num_photons; i++) {
+
         Eigen::Vector3d intersect1 = sampleRectangle(sides[side->first]);
 
         mrs_lib::geometry::Ray r = mrs_lib::geometry::Ray::twopointCast(source->getRelativePosition(), intersect1);
         rays_cast++;
+
         // for each photon check the collision with other sides of the sensor
         for (int j = 0; j < 6; j++) {
+
           if (j == side->second) {
             continue;
           }
-          auto intersect2 = sides[j].intersectionRay(r);
-          if (intersect2 != boost::none) {
-            // ray hit, now calculate detection probability
 
+          auto intersect2 = sides[j].intersectionRay(r);
+
+          if (intersect2 != boost::none) {
+
+            // ray hit, now calculate detection probability
             double track_length = (*intersect2 - intersect1).norm();
             double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density);
             double coin_flip    = rand_dbl(rand_gen);
+
             if (coin_flip < pe_prob) {
               photons_captured++;
             }
@@ -272,29 +481,44 @@ ros::Time Timepix::simulate() {
       }
     }
   }
+
   publishSensorMsg(photons_captured);
+
   return ros::Time::now();
 }
+
 //}
 
-/* publisherLoop //{ */
+/* publisherLoop() //{ */
+
 void Timepix::publisherLoop() {
+
   while (!terminated) {
+
     auto sim_start = ros::Time::now();
+
     publishDiagnostics();
+
     auto sim_end      = simulate();
     auto sim_duration = sim_end - sim_start;
     (ros::Duration(exposition_seconds) - sim_duration).sleep();
   }
 }
+
 //}
 
-/* calculateSideProperties //{ */
+/* calculateSideProperties() //{ */
+
 std::vector<SideProperty> Timepix::calculateSideProperties(SourceAbstraction s) {
+
   std::vector<SideProperty> ret;
+
   for (int idx = 0; idx < 6; idx++) {
+
     Eigen::Vector3d side_normal = (sides[idx].b() - sides[idx].a()).cross(sides[idx].d() - sides[idx].a());
+
     if (side_normal.dot(s.getRelativePosition()) > 0) {
+
       double       solid_angle       = rad_utils::geometry::rectSolidAngle(sides[idx], s.getRelativePosition());
       double       apparent_activity = (s.getActivity() / (4 * M_PI)) * solid_angle;
       SideProperty sp;
@@ -306,15 +530,20 @@ std::vector<SideProperty> Timepix::calculateSideProperties(SourceAbstraction s) 
       }
     }
   }
+
   return ret;
 }
+
 //}
 
-/* buildSensorCuboid //{ */
+/* buildSensorCuboid() //{ */
+
 void Timepix::buildSensorCuboid() {
+
   for (int i = 0; i < 6; i++) {
     sides.push_back(mrs_lib::geometry::Rectangle());
   }
+
   Eigen::Vector3d A(size[0] / 2.0, -size[1] / 2.0, -size[2] / 2.0);
   Eigen::Vector3d B(size[0] / 2.0, size[1] / 2.0, -size[2] / 2.0);
   Eigen::Vector3d C(size[0] / 2.0, size[1] / 2.0, size[2] / 2.0);
@@ -332,18 +561,24 @@ void Timepix::buildSensorCuboid() {
   sides[BOTTOM] = mrs_lib::geometry::Rectangle(F, E, B, A);
   sides[TOP]    = mrs_lib::geometry::Rectangle(D, C, H, G);
 }
+
 //}
 
-/* traceEnvironmentTransmission//{ */
+/* traceEnvironmentTransmission() //{ */
+
 double Timepix::traceEnvironmentTransmission(SourceAbstraction sa) {
+
   Eigen::Vector3d source_position = sa.getRelativePosition();
 
   mrs_lib::geometry::Ray r = mrs_lib::geometry::Ray::twopointCast(Eigen::Vector3d::Zero(), source_position);
 
   double transmission              = 1.0;
   double cumulative_obstacle_track = 0.0;
+
   for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
+
     std::vector<Eigen::Vector3d> intersections = o->getRelativeCuboid().intersectionRay(r);
+
     if (intersections.size() > 1) {
       if (source_position.norm() > intersections[0].norm() && source_position.norm() > intersections[1].norm()) {
         double obstacle_track  = (intersections[0] - intersections[1]).norm();
@@ -354,16 +589,21 @@ double Timepix::traceEnvironmentTransmission(SourceAbstraction sa) {
       }
     }
   }
+
   double air_track       = sa.getRelativePosition().norm() - cumulative_obstacle_track;
   double air_mac         = sa.getAirMassAttCoeff();
   double absorption_prob = calculateAbsorptionProb(air_track, air_mac, air_density);
   transmission *= (1.0 - absorption_prob);
+
   return transmission;
 }
+
 //}
 
-/* traceObstaclesId //{ */
+/* traceObstaclesId() //{ */
+
 std::vector<unsigned int> Timepix::traceObstaclesId(SourceAbstraction sa) {
+
   std::vector<unsigned int> ret;
 
   Eigen::Vector3d source_position = sa.getRelativePosition();
@@ -371,47 +611,42 @@ std::vector<unsigned int> Timepix::traceObstaclesId(SourceAbstraction sa) {
   mrs_lib::geometry::Ray r = mrs_lib::geometry::Ray::twopointCast(Eigen::Vector3d::Zero(), source_position);
 
   for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
+
     std::vector<Eigen::Vector3d> intersections = o->getRelativeCuboid().intersectionRay(r);
+
     if (intersections.size() > 1) {
       if (source_position.norm() > intersections[0].norm() && source_position.norm() > intersections[1].norm()) {
         ret.push_back(o->getId());
       }
     }
   }
+
   return ret;
 }
+
 //}
 
-/* onWorldLateUpdate //{ */
-void Timepix::onWorldLateUpdate() {
-  ros::Time t_now = ros::Time::now();
-  if (t_now > last_tf_time) {
-    tf::Transform  transform;
-    tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
-    tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
-    transform.setOrigin(origin);
-    transform.setRotation(quat);
-    transform_broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), global_frame.str(), local_frame.str()));
-    last_tf_time = ros::Time::now();
-  }
-}
-//}
+/* setExpositionCallback() //{ */
 
-/* setExpositionCallback //{ */
 bool Timepix::setExpositionCallback(mrs_msgs::Float64SrvRequest &req, mrs_msgs::Float64SrvResponse &res) {
+
   if (req.value > 0) {
     exposition_seconds = req.value;
     res.message        = "new exposition time was set";
     res.success        = true;
     return true;
   }
+
   res.message = "cannot set negative exposition time";
   res.success = false;
+
   return false;
 }
+
 //}
 
-/* sampleRectangle //{ */
+/* sampleRectangle() //{ */
+
 Eigen::Vector3d Timepix::sampleRectangle(mrs_lib::geometry::Rectangle r) {
 
   double k1 = rand_dbl(rand_gen);
@@ -419,10 +654,13 @@ Eigen::Vector3d Timepix::sampleRectangle(mrs_lib::geometry::Rectangle r) {
 
   return r.a() + k1 * (r.b() - r.a()) + k2 * (r.d() - r.a());
 }
+
 //}
 
-/* publishSensorMsg //{ */
+/* publishSensorMsg() //{ */
+
 void Timepix::publishSensorMsg(int particle_count) {
+
   gazebo_rad_msgs::Timepix msg;
   msg.stamp    = ros::Time::now();
   msg.id       = model_->GetId();
@@ -435,9 +673,11 @@ void Timepix::publishSensorMsg(int particle_count) {
 
   ros_publisher.publish(msg);
 }
+
 //}
 
-/* publishDiagnostics //{ */
+/* publishDiagnostics() //{ */
+
 void Timepix::publishDiagnostics() {
 
   gazebo_rad_msgs::TimepixDiagnostics msg;
@@ -457,7 +697,9 @@ void Timepix::publishDiagnostics() {
   msg.world_rot.z     = model_->WorldPose().Rot().Z();
 
   /* add sources //{ */
+
   for (auto s = sources.begin(); s != sources.end(); s++) {
+
     gazebo_rad_msgs::SourceDiagnostics sd;
     sd.id             = s->getId();
     sd.activity       = s->getActivity();
@@ -469,6 +711,7 @@ void Timepix::publishDiagnostics() {
 
     int  index           = 0;
     auto side_properties = s->getSideProperties();
+
     for (auto sp = side_properties.begin(); sp != side_properties.end(); sp++, index++) {
       if (index == 0) {
         sd.exposed_sides.x       = sp->first;
@@ -481,12 +724,16 @@ void Timepix::publishDiagnostics() {
         sd.apparent_activities.z = sp->second;
       }
     }
+
     msg.sources.push_back(sd);
   }
+
   //}
 
   /* add obstacles //{ */
+
   for (auto o = obstacles.begin(); o != obstacles.end(); o++) {
+
     gazebo_rad_msgs::ObstacleDiagnostics od;
     od.id             = o->getId();
     od.material       = o->getMaterial();
@@ -500,21 +747,29 @@ void Timepix::publishDiagnostics() {
     od.size.x         = o->getSize().x();
     od.size.y         = o->getSize().y();
     od.size.z         = o->getSize().z();
+
     msg.obstacles.push_back(od);
   }
+
   //}
+
   diagnostics_publisher.publish(msg);
+
   debugVisualize();
 }
+
 //}
 
-/* debugVisualize //{ */
+/* debugVisualize() //{ */
+
 void Timepix::debugVisualize() {
+
   debug_visualizer.clearBuffers();
   debug_visualizer.clearVisuals();
 
   // draw sensor
   for (unsigned int i = 0; i < sides.size(); i++) {
+
     debug_visualizer.addRectangle(sides[i], BLUE, true);
     debug_visualizer.addRectangle(sides[i], BLACK, false);
 
@@ -525,6 +780,7 @@ void Timepix::debugVisualize() {
 
   // draw registered sources
   for (unsigned int i = 0; i < sources.size(); i++) {
+
     debug_visualizer.addPoint(sources[i].getRelativePosition(), GREEN);
 
     // draw participating obstacles
@@ -540,7 +796,9 @@ void Timepix::debugVisualize() {
     debug_visualizer.addCuboid(obstacles[i].getRelativeCuboid(), BLACK, false);
   }
 
-
   debug_visualizer.publish();
 }
+
 //}
+
+GZ_REGISTER_MODEL_PLUGIN(Timepix)

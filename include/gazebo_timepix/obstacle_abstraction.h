@@ -1,5 +1,5 @@
-#ifndef RADIATION_UTILS_OBSTACLE_H
-#define RADIATION_UTILS_OBSTACLE_H
+#ifndef OBSTACLE_ABSTRACTION_H
+#define OBSTACLE_ABSTRACTION_H
 
 #include <ros/ros.h>
 #include <vector>
@@ -10,7 +10,6 @@
 #include <mrs_lib/geometry/misc.h>
 #include <rad_utils/physics.h>
 #include <gazebo_timepix/source_abstraction.h>
-
 
 class ObstacleAbstraction {
 private:
@@ -136,6 +135,7 @@ ObstacleAbstraction::~ObstacleAbstraction() {
 
 ObstacleAbstraction::ObstacleAbstraction(unsigned int gazebo_id, std::string material, Eigen::Vector3d relative_position,
                                          Eigen::Quaterniond relative_orientation, Eigen::Vector3d size) {
+
   this->gazebo_id            = gazebo_id;
   this->material             = material;
   this->relative_position    = relative_position;
@@ -144,4 +144,4 @@ ObstacleAbstraction::ObstacleAbstraction(unsigned int gazebo_id, std::string mat
   this->density              = getMaterialDensity(material);
 }
 
-#endif /* RADIATION_UTILS_OBSTACLE_H */
+#endif /* OBSTACLE_ABSTRACTION_H */
