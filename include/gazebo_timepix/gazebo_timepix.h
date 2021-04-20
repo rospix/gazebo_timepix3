@@ -32,7 +32,7 @@
 #include <gazebo_timepix/source_abstraction.h>
 #include <gazebo_timepix/obstacle_abstraction.h>
 
-#include <radiation_utils/physics.h>
+#include <rad_utils/physics.h>
 
 // ros and gazebo messages
 #include <gazebo_rad_msgs/Timepix.h>
