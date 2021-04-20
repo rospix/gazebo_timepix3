@@ -1,3 +1,5 @@
+/* includes //{ */
+
 // std libraries
 #include <algorithm>
 #include <boost/thread.hpp>
@@ -40,6 +42,8 @@
 #include <gazebo_rad_msgs/Termination.pb.h>
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
 #include <gazebo_rad_msgs/RadiationObstacle.pb.h>
+
+//}
 
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource>   RadiationSourceConstPtr;
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationObstacle> RadiationObstacleConstPtr;

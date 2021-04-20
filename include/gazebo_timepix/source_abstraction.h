@@ -1,5 +1,5 @@
-#ifndef RADIATION_UTILS_SOURCE_H
-#define RADIATION_UTILS_SOURCE_H
+#ifndef SOURCE_ABSTRACTION_H
+#define SOURCE_ABSTRACTION_H
 
 #include <string>
 #include <vector>
@@ -10,6 +10,7 @@
 typedef std::pair<int, double> SideProperty;
 
 /* SourceAbstraction //{ */
+
 class SourceAbstraction {
 private:
   unsigned int gazebo_id;
@@ -105,6 +106,7 @@ SourceAbstraction::~SourceAbstraction() {
 
 SourceAbstraction::SourceAbstraction(unsigned int gazebo_id, std::string material, double activity, double energy, double mass_att_coeff,
                                      double air_mass_att_coeff, Eigen::Vector3d relative_position) {
+
   this->gazebo_id          = gazebo_id;
   this->material           = material;
   this->activity           = activity;
@@ -115,4 +117,4 @@ SourceAbstraction::SourceAbstraction(unsigned int gazebo_id, std::string materia
 }
 //}
 
-#endif /* RADIATION_UTILS_SOURCE_H */
+#endif /* SOURCE_ABSTRACTION_H */
