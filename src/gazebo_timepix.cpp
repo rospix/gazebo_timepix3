@@ -43,6 +43,8 @@
 #include <gazebo_rad_msgs/RadiationSource.pb.h>
 #include <gazebo_rad_msgs/RadiationObstacle.pb.h>
 
+#include <rad_msgs/ClusterList.h>
+
 //}
 
 typedef const boost::shared_ptr<const gazebo_rad_msgs::msgs::RadiationSource>   RadiationSourceConstPtr;
@@ -66,6 +68,8 @@ private:
   std::string              material = "si";
   std::stringstream        global_frame;
   std::stringstream        local_frame;
+
+  unsigned long sequence_num = 0;
 
   std::string _package_path_;
 
@@ -244,7 +248,7 @@ void Timepix::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   // ros communication
   std::stringstream ss;
   ss << "/" << model_->GetName() << "/timepix/data";
-  ros_publisher = ros_node.advertise<gazebo_rad_msgs::Timepix>(ss.str().c_str(), 1);
+  ros_publisher = ros_node.advertise<rad_msgs::ClusterList>(ss.str().c_str(), 1);
   ss.str(std::string());
   ss << "/" << model_->GetName() << "/timepix/plugin_diagnostics";
   diagnostics_publisher = ros_node.advertise<gazebo_rad_msgs::TimepixDiagnostics>(ss.str().c_str(), 1);
@@ -576,16 +580,19 @@ Eigen::Vector3d Timepix::sampleRectangle(mrs_lib::geometry::Rectangle r) {
 
 /* publishSensorMsg //{ */
 void Timepix::publishSensorMsg(int particle_count) {
-  gazebo_rad_msgs::Timepix msg;
-  msg.stamp    = ros::Time::now();
-  msg.id       = model_->GetId();
-  msg.material = material;
-  msg.size.x   = size.X();
-  msg.size.y   = size.Y();
-  msg.size.z   = size.Z();
-  msg.exposure = exposition_seconds;
-  msg.count    = particle_count;
+  rad_msgs::ClusterList msg;
+  msg.header.stamp    = ros::Time::now();
+  msg.header.frame_id = "minipix";
+  msg.header.seq = sequence_num;
 
+  for(int i = 0; i < particle_count; i++){
+    rad_msgs::Cluster cluster;
+    cluster.stamp = ros::Time::now();
+    cluster.energy = sources[0].getEnergy() * 1000.0; // MeV -> keV
+    msg.clusters.push_back(cluster);
+  }
+
+  ++sequence_num;
   ros_publisher.publish(msg);
 }
 //}
