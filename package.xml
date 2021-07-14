@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package format="2">
 
-  <name>gazebo_timepix</name>
+  <name>gazebo_timepix3</name>
   <version>2.0.0</version>
-  <description>This package contains implementation of Timepix detector simulator plugin for Gazebo.
+  <description>This package contains implementation of Timepix3 event camera simulator plugin for Gazebo.
     It allows the user to simulate readouts induced by radiation sources (use plugin gazebo_rad_source).
   </description>
 
@@ -29,5 +29,7 @@
   <depend>mrs_lib</depend>
 
   <export>
+    <gazebo_ros gazebo_model_path="${prefix}/models"/>
+    <gazebo_ros gazebo_media_path="${prefix}"/>
   </export>
 </package>

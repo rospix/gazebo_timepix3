@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.1.2)
-project(gazebo_timepix)
+project(gazebo_timepix3)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,6 @@ include_directories(
 
 link_directories(${GAZEBO_LIBRARY_DIRS})
 
-add_library(gazebo_timepix SHARED src/gazebo_timepix.cpp)
-target_link_libraries(gazebo_timepix ${catkin_LIBRARIES} ${Eigen_LIBRARIES})
-add_dependencies(gazebo_timepix ${catkin_EXPORTED_TARGETS})
+add_library(gazebo_timepix3 SHARED src/gazebo_timepix3.cpp)
+target_link_libraries(gazebo_timepix3 ${catkin_LIBRARIES} ${Eigen_LIBRARIES})
+add_dependencies(gazebo_timepix3 ${catkin_EXPORTED_TARGETS})
