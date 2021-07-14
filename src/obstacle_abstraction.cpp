@@ -73,44 +73,44 @@ mrs_lib::geometry::Cuboid ObstacleAbstraction::getRelativeCuboid() {
 //}
 
 /* setRelativePosition //{ */
-void ObstacleAbstraction::setRelativePosition(const Eigen::Vector3d &relative_position) {
+void ObstacleAbstraction::setRelativePosition(Eigen::Vector3d &relative_position) {
   relative_position_ = relative_position;
   updateRelativeCuboid();
 }
 //}
 
 /* setRelativeOrientation //{ */
-void ObstacleAbstraction::setRelativeOrientation(const Eigen::Quaterniond &relative_orientation) {
+void ObstacleAbstraction::setRelativeOrientation(Eigen::Quaterniond &relative_orientation) {
   relative_orientation_ = relative_orientation;
   updateRelativeCuboid();
 }
 //}
 
 /* addSource //{ */
-void ObstacleAbstraction::addSource(const SourceAbstraction &sa) {
-  for (unsigned int i = 0; i < source_ids.size(); i++) {
-    if (source_ids[i] == sa.getId()) {
+void ObstacleAbstraction::addSource(SourceAbstraction &sa) {
+  for (unsigned int i = 0; i < source_ids_.size(); i++) {
+    if (source_ids_[i] == sa.getId()) {
       return;
     }
   }
-  source_ids.push_back(sa.getId());
-  source_att_coeffs.push_back(calculateMassAttCoeff(sa.getEnergy(), sa.getMaterial(), AttenuationType::MASS_ENERGY));
-  ROS_INFO("Source%u linked to Obstacle%u", sa.getId(), gazebo_id);
+  source_ids_.push_back(sa.getId());
+  source_att_coeffs_.push_back(calculateMassAttCoeff(sa.getEnergy(), sa.getMaterial(), AttenuationType::MASS_ENERGY));
+  ROS_INFO("Source%u linked to Obstacle%u", sa.getId(), gazebo_id_);
 }
 //}
 
 /* removeSource //{ */
-void ObstacleAbstraction::removeSource(const SourceAbstraction &sa) {
+void ObstacleAbstraction::removeSource(SourceAbstraction &sa) {
   unsigned int index = -1;
-  for (unsigned int i = 0; i < source_ids.size(); i++) {
-    if (source_ids[i] == sa.getId()) {
+  for (unsigned int i = 0; i < source_ids_.size(); i++) {
+    if (source_ids_[i] == sa.getId()) {
       index = i;
       break;
     }
   }
   if (index >= 0) {
-    source_ids.erase(source_ids.begin() + index);
-    source_att_coeffs.erase(source_att_coeffs.begin() + index);
+    source_ids_.erase(source_ids_.begin() + index);
+    source_att_coeffs_.erase(source_att_coeffs_.begin() + index);
   }
 }
 //}
@@ -118,15 +118,15 @@ void ObstacleAbstraction::removeSource(const SourceAbstraction &sa) {
 /* removeSource //{ */
 void ObstacleAbstraction::removeSource(const unsigned int source_index) {
   unsigned int index = -1;
-  for (unsigned int i = 0; i < source_ids.size(); i++) {
-    if (source_ids[i] == source_index) {
+  for (unsigned int i = 0; i < source_ids_.size(); i++) {
+    if (source_ids_[i] == source_index) {
       index = i;
       break;
     }
   }
   if (index >= 0) {
-    source_ids.erase(source_ids.begin() + index);
-    source_att_coeffs.erase(source_att_coeffs.begin() + index);
+    source_ids_.erase(source_ids_.begin() + index);
+    source_att_coeffs_.erase(source_att_coeffs_.begin() + index);
   }
 }
 //}

@@ -44,11 +44,11 @@ public:
   Eigen::Quaterniond        getRelativeOrientation();
   mrs_lib::geometry::Cuboid getRelativeCuboid();
 
-  void setRelativePosition(const Eigen::Vector3d &relative_position);
-  void setRelativeOrientation(Eigen::Quaterniond relative_orientation);
+  void setRelativePosition(Eigen::Vector3d &relative_position);
+  void setRelativeOrientation(Eigen::Quaterniond &relative_orientation);
 
-  void addSource(const SourceAbstraction &sa);
-  void removeSource(const SourceAbstraction &sa);
+  void addSource(SourceAbstraction &sa);
+  void removeSource(SourceAbstraction &sa);
   void removeSource(unsigned int source_index);
 
   void updateRelativeCuboid();

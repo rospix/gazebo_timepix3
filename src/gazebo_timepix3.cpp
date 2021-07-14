@@ -261,8 +261,6 @@ void Timepix3::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
 /* sourcesCallback //{ */
 void Timepix3::sourcesCallback(RadiationSourceConstPtr &msg) {
 
-  std::cout << "Source "<< msg->id() << std::endl;
-
   std::scoped_lock lock(sources_mutex_);
 
   /* Check whether the source is already registered //{ */
@@ -293,8 +291,6 @@ void Timepix3::sourcesCallback(RadiationSourceConstPtr &msg) {
 
 /* obstaclesCallback //{ */
 void Timepix3::obstaclesCallback(RadiationObstacleConstPtr &msg) {
-  
-  std::cout << "Source "<< msg->id() << std::endl;
 
   std::scoped_lock lock(obstacles_mutex_);
 
@@ -677,4 +673,5 @@ void Timepix3::debugVisualize() {
   debug_visualizer_.publish();
 }
 //}
+
 }  // namespace gazebo
