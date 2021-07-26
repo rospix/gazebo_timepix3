@@ -193,26 +193,30 @@ Timepix3::~Timepix3() {
 /* Load //{ */
 void Timepix3::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
 
+  model_ = _model;
+
   /* parse sdf params //{ */
   if (_sdf->HasElement("material")) {
     material_ = _sdf->Get<std::string>("material");
   } else {
-    ROS_WARN("[Timepix3 #%u]: parameter 'material' was not specified", model_->GetId());
+    std::cout << "[Timepix3 #" << model_->GetId() << "]: parameter 'material' was not specified" << std::endl;
+    return;
   }
   if (_sdf->HasElement("size")) {
     size_ = _sdf->Get<ignition::math::Vector3d>("size");
   } else {
-    ROS_WARN("[Timepix3 #%u]: parameter 'size' was not specified", model_->GetId());
+    std::cout << "[Timepix3 #" << model_->GetId() << "]: parameter 'size' was not specified" << std::endl;
+    return;
   }
   if (_sdf->HasElement("max_message_window")) {
     max_message_window_ = _sdf->Get<double>("max_message_window");
   } else {
-    ROS_WARN("[Timepix3 #%u]: parameter 'max_message_window' was not specified", model_->GetId());
+    std::cout << "[Timepix3 #" << model_->GetId() << "]: parameter 'max_message_window' was not specified" << std::endl;
+    return;
   }
   //}
 
   // init local variables
-  model_ = _model;
   buildSensorCuboid();
   local_frame_ << model_->GetName().c_str() << "/timepix_origin";
   global_frame_ << model_->GetName().c_str() << "/gps_origin";
@@ -252,7 +256,7 @@ void Timepix3::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   debug_visualizer_ = mrs_lib::BatchVisualizer(ros_node_, "debug_visualizer", local_frame_.str());
   debug_visualizer_.setPointsScale(0.3);
 
-  terminated_       = false;
+  terminated_ = false;
   publisher_thread_ = boost::thread(boost::bind(&Timepix3::publisherLoop, this));
   ROS_INFO("[Timepix3 #%u]: Plugin initialized", model_->GetId());
 }
@@ -372,46 +376,49 @@ void Timepix3::terminationCallback(TerminationConstPtr &msg) {
 
 /* simulate //{ */
 ros::Time Timepix3::simulate() {
-  /* int photons_captured = 0; */
-  /* int rays_cast        = 0; */
+  int photons_captured = 0;
+  int rays_cast        = 0;
 
-  /* for (auto source = sources.begin(); source != sources.end(); source++) { */
-  /*   // get num of photons to be simulated */
-  /*   // trace obstacles */
-  /*   Eigen::Vector3d        source_pos               = source->getRelativePosition(); */
-  /*   mrs_lib::geometry::Ray r                        = mrs_lib::geometry::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos); */
-  /*   double                 environment_transmission = traceEnvironmentTransmission(*source); */
+  std::scoped_lock lock(sources_mutex_);
 
-  /*   std::vector<SideProperty> side_properties = source->getSideProperties(); */
-  /*   for (auto side = side_properties.begin(); side != side_properties.end(); side++) { */
-  /*     int num_photons = (int)(side->second * exposition_seconds * environment_transmission); */
+  for (auto source = sources_.begin(); source != sources_.end(); source++) {
+    // get num of photons to be simulated
+    // trace obstacles
+    Eigen::Vector3d        source_pos               = source->getRelativePosition();
+    mrs_lib::geometry::Ray r                        = mrs_lib::geometry::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
+    double                 environment_transmission = traceEnvironmentTransmission(*source);
 
-  /*     // generate N photons */
-  /*     for (int i = 0; i < num_photons; i++) { */
-  /*       Eigen::Vector3d intersect1 = sampleRectangle(sides[side->first]); */
+    std::vector<SideProperty> side_properties = source->getSideProperties();
+    for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
+      int num_photons = (int)(side->second * max_message_window_ * environment_transmission);
+      std::cout << "I should currently receive " << (num_photons / max_message_window_) << " photons per second!\n";
 
-  /*       mrs_lib::geometry::Ray r = mrs_lib::geometry::Ray::twopointCast(source->getRelativePosition(), intersect1); */
-  /*       rays_cast++; */
-  /*       // for each photon check the collision with other sides of the sensor */
-  /*       for (int j = 0; j < 6; j++) { */
-  /*         if (j == side->second) { */
-  /*           continue; */
-  /*         } */
-  /*         auto intersect2 = sides[j].intersectionRay(r); */
-  /*         if (intersect2 != boost::none) { */
-  /*           // ray hit, now calculate detection probability */
+      // generate N photons
+      /*     for (int i = 0; i < num_photons; i++) { */
+      /*       Eigen::Vector3d intersect1 = sampleRectangle(sides[side->first]); */
 
-  /*           double track_length = (*intersect2 - intersect1).norm(); */
-  /*           double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density); */
-  /*           double coin_flip    = rand_dbl(rand_gen); */
-  /*           if (coin_flip < pe_prob) { */
-  /*             photons_captured++; */
-  /*           } */
-  /*         } */
-  /*       } */
-  /*     } */
-  /*   } */
-  /* } */
+      /*       mrs_lib::geometry::Ray r = mrs_lib::geometry::Ray::twopointCast(source->getRelativePosition(), intersect1); */
+      /*       rays_cast++; */
+      /*       // for each photon check the collision with other sides of the sensor */
+      /*       for (int j = 0; j < 6; j++) { */
+      /*         if (j == side->second) { */
+      /*           continue; */
+      /*         } */
+      /*         auto intersect2 = sides[j].intersectionRay(r); */
+      /*         if (intersect2 != boost::none) { */
+      /*           // ray hit, now calculate detection probability */
+
+      /*           double track_length = (*intersect2 - intersect1).norm(); */
+      /*           double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density); */
+      /*           double coin_flip    = rand_dbl(rand_gen); */
+      /*           if (coin_flip < pe_prob) { */
+      /*             photons_captured++; */
+      /*           } */
+      /*         } */
+      /*       } */
+      /*     } */
+    }
+  }
   /* publishSensorMsg(photons_captured); */
   return ros::Time::now();
 }
@@ -421,8 +428,9 @@ ros::Time Timepix3::simulate() {
 void Timepix3::publisherLoop() {
   while (!terminated_) {
     auto sim_start = ros::Time::now();
-    publishDiagnostics();
+    /* publishDiagnostics(); */
     auto sim_end      = simulate();
+    /* auto sim_end      = ros::Time::now(); */
     auto sim_duration = sim_end - sim_start;
     (ros::Duration(max_message_window_) - sim_duration).sleep();
   }
