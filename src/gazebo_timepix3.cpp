@@ -64,13 +64,14 @@ protected:
 
 private:
   ignition::math::Vector3d size_;
-  std::string              material_ = "si";
+  std::string              material_      = "si";
+  std::string              sensor_suffix_ = "";
   std::stringstream        global_frame_;
   std::stringstream        local_frame_;
 
   double density_;
   double air_density_;
-  double max_message_window_;
+  double max_message_window_ = 0.5;
 
   unsigned long sequence_num_ = 0;
 
@@ -101,7 +102,8 @@ private:
   void buildSensorCuboid();
   void publishDiagnostics();
   void debugVisualize();
-  void publishSensorMsg(const int particle_count);
+  void publishSensorMsg(const Eigen::Vector2i &pixel_coord, const double photon_energy);
+  void publishEmptyMsg();
 
   ros::Time simulate();
 
@@ -122,7 +124,7 @@ private:
   mrs_lib::BatchVisualizer debug_visualizer_;
   mrs_lib::BatchVisualizer bv_;
 
-  Eigen::Vector3d sampleRectangle(mrs_lib::geometry::Rectangle &r);
+  std::pair<Eigen::Vector3d, Eigen::Vector2i> sampleRectangle(mrs_lib::geometry::Rectangle &r);
 
   // RNG stuff
   std::mt19937                           rand_gen_;
@@ -200,7 +202,7 @@ void Timepix3::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
     material_ = _sdf->Get<std::string>("material");
   } else {
     std::cout << "[Timepix3 #" << model_->GetId() << "]: parameter 'material' was not specified" << std::endl;
-    return;
+    std::cout << "[Timepix3 #" << model_->GetId() << "]: using default value: '" << material_ << "'" << std::endl;
   }
   if (_sdf->HasElement("size")) {
     size_ = _sdf->Get<ignition::math::Vector3d>("size");
@@ -212,7 +214,12 @@ void Timepix3::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
     max_message_window_ = _sdf->Get<double>("max_message_window");
   } else {
     std::cout << "[Timepix3 #" << model_->GetId() << "]: parameter 'max_message_window' was not specified" << std::endl;
-    return;
+    std::cout << "[Timepix3 #" << model_->GetId() << "]: using default value: '" << max_message_window_ << "'" << std::endl;
+  }
+  if (_sdf->HasElement("sensor_suffix")) {
+    sensor_suffix_ = _sdf->Get<double>("sensor_suffix");
+  } else {
+    std::cout << "[Timepix3 #" << model_->GetId() << "]: parameter 'sensor_suffix' not used" << std::endl;
   }
   //}
 
@@ -247,16 +254,16 @@ void Timepix3::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
 
   // ros communication
   std::stringstream ss;
-  ss << "/" << model_->GetName() << "/timepix3/data";
+  ss << "/" << model_->GetName() << "/minipix" << sensor_suffix_.c_str() << "/cluster_list";
   ros_publisher_ = ros_node_.advertise<rad_msgs::ClusterList>(ss.str().c_str(), 1);
   ss.str(std::string());
-  ss << "/" << model_->GetName() << "/timepix3/plugin_diagnostics";
+  ss << "/" << model_->GetName() << "/minipix" << sensor_suffix_.c_str() << "/plugin_diagnostics";
   diagnostics_publisher_ = ros_node_.advertise<gazebo_rad_msgs::Timepix3Diagnostics>(ss.str().c_str(), 1);
 
   debug_visualizer_ = mrs_lib::BatchVisualizer(ros_node_, "debug_visualizer", local_frame_.str());
   debug_visualizer_.setPointsScale(0.3);
 
-  terminated_ = false;
+  terminated_       = false;
   publisher_thread_ = boost::thread(boost::bind(&Timepix3::publisherLoop, this));
   ROS_INFO("[Timepix3 #%u]: Plugin initialized", model_->GetId());
 }
@@ -381,6 +388,7 @@ ros::Time Timepix3::simulate() {
 
   std::scoped_lock lock(sources_mutex_);
 
+  //{
   for (auto source = sources_.begin(); source != sources_.end(); source++) {
     // get num of photons to be simulated
     // trace obstacles
@@ -388,38 +396,47 @@ ros::Time Timepix3::simulate() {
     mrs_lib::geometry::Ray r                        = mrs_lib::geometry::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
     double                 environment_transmission = traceEnvironmentTransmission(*source);
 
+    /* std::cout << "Environment transmission: " << environment_transmission << std::endl; */
+
     std::vector<SideProperty> side_properties = source->getSideProperties();
     for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
       int num_photons = (int)(side->second * max_message_window_ * environment_transmission);
-      std::cout << "I should currently receive " << (num_photons / max_message_window_) << " photons per second!\n";
 
       // generate N photons
-      /*     for (int i = 0; i < num_photons; i++) { */
-      /*       Eigen::Vector3d intersect1 = sampleRectangle(sides[side->first]); */
+      for (int i = 0; i < num_photons; i++) {
 
-      /*       mrs_lib::geometry::Ray r = mrs_lib::geometry::Ray::twopointCast(source->getRelativePosition(), intersect1); */
-      /*       rays_cast++; */
-      /*       // for each photon check the collision with other sides of the sensor */
-      /*       for (int j = 0; j < 6; j++) { */
-      /*         if (j == side->second) { */
-      /*           continue; */
-      /*         } */
-      /*         auto intersect2 = sides[j].intersectionRay(r); */
-      /*         if (intersect2 != boost::none) { */
-      /*           // ray hit, now calculate detection probability */
+        std::pair<Eigen::Vector3d, Eigen::Vector2i> sample      = sampleRectangle(sides_[side->first]);
+        Eigen::Vector3d                             intersect1  = sample.first;
+        Eigen::Vector2i                             pixel_coord = sample.second;
 
-      /*           double track_length = (*intersect2 - intersect1).norm(); */
-      /*           double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density); */
-      /*           double coin_flip    = rand_dbl(rand_gen); */
-      /*           if (coin_flip < pe_prob) { */
-      /*             photons_captured++; */
-      /*           } */
-      /*         } */
-      /*       } */
-      /*     } */
+        mrs_lib::geometry::Ray r = mrs_lib::geometry::Ray::twopointCast(source->getRelativePosition(), intersect1);
+        rays_cast++;
+        // for each photon check the collision with other sides of the sensor
+        for (int j = 0; j < 6; j++) {
+          if (j == side->second) {
+            continue;
+          }
+          auto intersect2 = sides_[j].intersectionRay(r);
+          if (intersect2 != boost::none) {
+            // ray hit, now calculate detection probability
+
+            double track_length = (*intersect2 - intersect1).norm();
+            double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density_);
+            double coin_flip    = rand_dbl_(rand_gen_);
+            if (coin_flip < pe_prob) {
+              photons_captured++;
+              publishSensorMsg(pixel_coord, source->getEnergy());
+            }
+          }
+        }
+      }
     }
   }
-  /* publishSensorMsg(photons_captured); */
+  //}
+  if (photons_captured < 1) {
+    publishEmptyMsg();
+  }
+
   return ros::Time::now();
 }
 //}
@@ -429,7 +446,7 @@ void Timepix3::publisherLoop() {
   while (!terminated_) {
     auto sim_start = ros::Time::now();
     /* publishDiagnostics(); */
-    auto sim_end      = simulate();
+    auto sim_end = simulate();
     /* auto sim_end      = ros::Time::now(); */
     auto sim_duration = sim_end - sim_start;
     (ros::Duration(max_message_window_) - sim_duration).sleep();
@@ -546,28 +563,52 @@ void Timepix3::onWorldLateUpdate() {
 //}
 
 /* sampleRectangle //{ */
-Eigen::Vector3d Timepix3::sampleRectangle(mrs_lib::geometry::Rectangle &r) {
+std::pair<Eigen::Vector3d, Eigen::Vector2i> Timepix3::sampleRectangle(mrs_lib::geometry::Rectangle &r) {
 
   double k1 = rand_dbl_(rand_gen_);
   double k2 = rand_dbl_(rand_gen_);
 
-  return r.a() + k1 * (r.b() - r.a()) + k2 * (r.d() - r.a());
+  Eigen::Vector3d world_pos = r.a() + k1 * (r.b() - r.a()) + k2 * (r.d() - r.a());
+  Eigen::Vector2i pixel_coord;
+  pixel_coord.x() = int(256 * k1);
+  pixel_coord.y() = int(256 * k2);
+
+  return {world_pos, pixel_coord};
 }
 //}
 
 /* publishSensorMsg //{ */
-void Timepix3::publishSensorMsg(const int particle_count) {
+void Timepix3::publishSensorMsg(const Eigen::Vector2i &pixel_coord, const double photon_energy) {
   rad_msgs::ClusterList msg;
-  msg.header.stamp    = ros::Time::now();
-  msg.header.frame_id = "minipix";
+  msg.header.stamp = ros::Time::now();
+  std::stringstream ss;
+  ss << "minipix" << sensor_suffix_.c_str();
+  msg.header.frame_id = ss.str();
   msg.header.seq      = sequence_num_;
 
-  for (int i = 0; i < particle_count; i++) {
-    rad_msgs::Cluster cluster;
-    cluster.stamp  = ros::Time::now();
-    cluster.energy = sources_[0].getEnergy() * 1000.0;  // MeV -> keV
-    msg.clusters.push_back(cluster);
-  }
+  rad_msgs::Cluster c;
+  c.energy = photon_energy;
+  c.height = 1;
+  c.x      = pixel_coord.x();
+  c.y      = pixel_coord.y();
+  c.size   = 1;
+  c.stamp  = ros::Time::now();
+
+  msg.clusters.push_back(c);
+
+  ++sequence_num_;
+  ros_publisher_.publish(msg);
+}
+//}
+
+/* publishEmptyMsg //{ */
+void Timepix3::publishEmptyMsg() {
+  rad_msgs::ClusterList msg;
+  msg.header.stamp = ros::Time::now();
+  std::stringstream ss;
+  ss << "minipix" << sensor_suffix_.c_str();
+  msg.header.frame_id = ss.str();
+  msg.header.seq      = sequence_num_;
 
   ++sequence_num_;
   ros_publisher_.publish(msg);
