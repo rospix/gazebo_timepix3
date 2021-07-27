@@ -225,7 +225,7 @@ void Timepix3::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
 
   // init local variables
   buildSensorCuboid();
-  local_frame_ << model_->GetName().c_str() << "/timepix_origin";
+  local_frame_ << model_->GetName().c_str() << "/minipix" << sensor_suffix_.c_str();
   global_frame_ << model_->GetName().c_str() << "/gps_origin";
   density_     = getMaterialDensity(material_);
   air_density_ = getMaterialDensity("air");
