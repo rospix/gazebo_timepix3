@@ -582,7 +582,7 @@ void Timepix3::publishSensorMsg(const Eigen::Vector2i &pixel_coord, const double
   rad_msgs::ClusterList msg;
   msg.header.stamp = ros::Time::now();
   std::stringstream ss;
-  ss << "minipix" << sensor_suffix_.c_str();
+  ss << model_->GetName().c_str() << "/minipix" << sensor_suffix_.c_str();
   msg.header.frame_id = ss.str();
   msg.header.seq      = sequence_num_;
 
@@ -606,7 +606,7 @@ void Timepix3::publishEmptyMsg() {
   rad_msgs::ClusterList msg;
   msg.header.stamp = ros::Time::now();
   std::stringstream ss;
-  ss << "minipix" << sensor_suffix_.c_str();
+  ss << model_->GetName().c_str() << "/minipix" << sensor_suffix_.c_str();
   msg.header.frame_id = ss.str();
   msg.header.seq      = sequence_num_;
 
