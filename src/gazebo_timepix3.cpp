@@ -217,7 +217,7 @@ void Timepix3::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
     std::cout << "[Timepix3 #" << model_->GetId() << "]: using default value: '" << max_message_window_ << "'" << std::endl;
   }
   if (_sdf->HasElement("sensor_suffix")) {
-    sensor_suffix_ = _sdf->Get<double>("sensor_suffix");
+    sensor_suffix_ = _sdf->Get<std::string>("sensor_suffix");
   } else {
     std::cout << "[Timepix3 #" << model_->GetId() << "]: parameter 'sensor_suffix' not used" << std::endl;
   }
