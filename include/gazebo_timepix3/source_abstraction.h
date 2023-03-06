@@ -38,15 +38,15 @@ public:
   bool operator==(unsigned int &i);
 
   // getters
-  unsigned int              getId();
-  std::string               getMaterial();
-  double                    getActivity();
-  double                    getEnergy();
-  double                    getMassAttCoeff();
-  Eigen::Vector3d           getRelativePosition();
-  std::vector<SideProperty> getSideProperties();
-  std::vector<unsigned int> getObstaclesInPath();
-  double                    getAirMassAttCoeff();
+  const unsigned int              getId() const;
+  const std::string               getMaterial() const;
+  const double                    getActivity() const;
+  const double                    getEnergy() const;
+  const double                    getMassAttCoeff() const;
+  const Eigen::Vector3d           getRelativePosition() const;
+  const std::vector<SideProperty> getSideProperties() const;
+  const std::vector<unsigned int> getObstaclesInPath() const;
+  const double                    getAirMassAttCoeff() const;
 
   void setSideProperties(std::vector<SideProperty> side_properties);
   void setRelativePosition(Eigen::Vector3d relative_position);

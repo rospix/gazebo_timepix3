@@ -37,59 +37,59 @@ bool SourceAbstraction::operator==(unsigned int &i) {
 //}
 
 /* getId //{ */
-unsigned int SourceAbstraction::getId() {
+const unsigned int SourceAbstraction::getId() const {
   return gazebo_id_;
 }
 //}
 
 /* getMaterial //{ */
-std::string SourceAbstraction::getMaterial() {
+const std::string SourceAbstraction::getMaterial() const {
   return material_;
 }
 //}
 
 /* getActivity //{ */
-double SourceAbstraction::getActivity() {
+const double SourceAbstraction::getActivity() const {
   return activity_;
 }
 //}
 
 /* getEnergy //{ */
-double SourceAbstraction::getEnergy() {
+const double SourceAbstraction::getEnergy() const {
   return energy_;
 }
 //}
 
 /* getMassAttCoeff //{ */
-double SourceAbstraction::getMassAttCoeff() {
+const double SourceAbstraction::getMassAttCoeff() const {
   return mass_att_coeff_;
 }
 //}
 
-
 /* getRelativePosition //{ */
-Eigen::Vector3d SourceAbstraction::getRelativePosition() {
+const Eigen::Vector3d SourceAbstraction::getRelativePosition() const {
   return relative_position_;
 }
 //}
 
 /* getSideProperties //{ */
-std::vector<SideProperty> SourceAbstraction::getSideProperties() {
+const std::vector<SideProperty> SourceAbstraction::getSideProperties() const {
   return side_properties_;
 }
 //}
 
 /* getObstaclesInPath //{ */
-std::vector<unsigned int> SourceAbstraction::getObstaclesInPath() {
+const std::vector<unsigned int> SourceAbstraction::getObstaclesInPath() const {
   return obstacles_in_path_;
 }
 //}
 
 /* getAirMassAttCoeff //{ */
-double SourceAbstraction::getAirMassAttCoeff() {
+const double SourceAbstraction::getAirMassAttCoeff() const {
   return air_mass_att_coeff_;
 }
 //}
+
 /* setSideProperties //{ */
 void SourceAbstraction::setSideProperties(std::vector<SideProperty> side_properties) {
   side_properties_ = side_properties;

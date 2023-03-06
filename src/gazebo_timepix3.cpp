@@ -72,17 +72,20 @@ private:
   double density_;
   double air_density_;
   double max_message_window_ = 0.5;
+  double photon_loop_rate_   = 1.0;
 
   unsigned long sequence_num_ = 0;
 
   std::string package_path_;
 
   bool          terminated_;
-  boost::thread publisher_thread_;
+  boost::thread photon_generator_thread_;
+  boost::thread intensity_updater_thread_;
 
   std::mutex sources_mutex_;
   std::mutex obstacles_mutex_;
   std::mutex model_mutex_;
+  std::mutex photon_loop_rate_mutex_;
 
   std::vector<SourceAbstraction>            sources_;
   std::vector<ObstacleAbstraction>          obstacles_;
@@ -98,16 +101,18 @@ private:
 
   event::ConnectionPtr updateConnection_;
 
-  void publisherLoop();
+  void intensityUpdaterLoop();
+  void photonGeneratorLoop();
   void buildSensorCuboid();
   void publishDiagnostics();
   void debugVisualize();
   void publishSensorMsg(const Eigen::Vector2i &pixel_coord, const double photon_energy);
   void publishEmptyMsg();
 
-  ros::Time simulate();
+  double getIntensity();
+  /* ros::Time simulate(); */
 
-  std::vector<SideProperty> calculateSideProperties(SourceAbstraction &sa);
+  std::vector<SideProperty> calculateSideProperties(const SourceAbstraction &sa);
 
   void sourcesCallback(RadiationSourceConstPtr &msg);
   void obstaclesCallback(RadiationObstacleConstPtr &msg);
@@ -187,7 +192,8 @@ Timepix3::~Timepix3() {
 
   // terminate
   terminated_ = true;
-  publisher_thread_.join();
+  intensity_updater_thread_.join();
+  photon_generator_thread_.join();
   ROS_INFO("[Timepix3 #%u]: Plugin terminated", model_->GetId());
 }
 //}
@@ -263,8 +269,9 @@ void Timepix3::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
   debug_visualizer_ = mrs_lib::BatchVisualizer(ros_node_, "debug_visualizer", local_frame_.str());
   debug_visualizer_.setPointsScale(0.3);
 
-  terminated_       = false;
-  publisher_thread_ = boost::thread(boost::bind(&Timepix3::publisherLoop, this));
+  terminated_               = false;
+  intensity_updater_thread_ = boost::thread(boost::bind(&Timepix3::intensityUpdaterLoop, this));
+  photon_generator_thread_  = boost::thread(boost::bind(&Timepix3::photonGeneratorLoop, this));
   ROS_INFO("[Timepix3 #%u]: Plugin initialized", model_->GetId());
 }
 //}
@@ -280,7 +287,7 @@ void Timepix3::sourcesCallback(RadiationSourceConstPtr &msg) {
     if (source->getId() == msg->id()) {
       Eigen::Vector3d source_world_pos(msg->x(), msg->y(), msg->z());
       source->setRelativePosition(targetRelativePosition(model_->WorldPose(), source_world_pos));
-      source->setSideProperties(calculateSideProperties(*source));
+      /* source->setSideProperties(calculateSideProperties(*source)); */
       return;
     }
   }
@@ -294,7 +301,7 @@ void Timepix3::sourcesCallback(RadiationSourceConstPtr &msg) {
   double            air_mass_att_coeff = calculateMassAttCoeff(msg->energy(), "air", AttenuationType::MASS_ENERGY);
   SourceAbstraction s(msg->id(), msg->material(), msg->activity(), msg->energy(), mass_att_coeff, air_mass_att_coeff,
                       targetRelativePosition(model_->WorldPose(), source_world_pos));
-  s.setSideProperties(calculateSideProperties(s));
+  /* s.setSideProperties(calculateSideProperties(s)); */
   sources_.push_back(s);
   //}
 }
@@ -381,14 +388,12 @@ void Timepix3::terminationCallback(TerminationConstPtr &msg) {
 }
 //}
 
-/* simulate //{ */
-ros::Time Timepix3::simulate() {
-  int photons_captured = 0;
-  int rays_cast        = 0;
+/* getIntensity //{ */
+double Timepix3::getIntensity() {
 
   std::scoped_lock lock(sources_mutex_);
 
-  //{
+  double theoretical_intensity = 0;
   for (auto source = sources_.begin(); source != sources_.end(); source++) {
     // get num of photons to be simulated
     // trace obstacles
@@ -400,62 +405,51 @@ ros::Time Timepix3::simulate() {
 
     std::vector<SideProperty> side_properties = source->getSideProperties();
     for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
-      int num_photons = (int)(side->second * max_message_window_ * environment_transmission);
-
-      // generate N photons
-      for (int i = 0; i < num_photons; i++) {
-
-        std::pair<Eigen::Vector3d, Eigen::Vector2i> sample      = sampleRectangle(sides_[side->first]);
-        Eigen::Vector3d                             intersect1  = sample.first;
-        Eigen::Vector2i                             pixel_coord = sample.second;
-
-        mrs_lib::geometry::Ray r = mrs_lib::geometry::Ray::twopointCast(source->getRelativePosition(), intersect1);
-        rays_cast++;
-        // for each photon check the collision with other sides of the sensor
-        for (int j = 0; j < 6; j++) {
-          if (j == side->second) {
-            continue;
-          }
-          auto intersect2 = sides_[j].intersectionRay(r);
-          if (intersect2 != boost::none) {
-            // ray hit, now calculate detection probability
-
-            double track_length = (*intersect2 - intersect1).norm();
-            double pe_prob      = calculateAbsorptionProb(track_length, source->getMassAttCoeff(), density_);
-            double coin_flip    = rand_dbl_(rand_gen_);
-            if (coin_flip < pe_prob) {
-              photons_captured++;
-              publishSensorMsg(pixel_coord, source->getEnergy());
-            }
-          }
-        }
-      }
+      theoretical_intensity += (side->second * environment_transmission);
     }
   }
-  //}
-  if (photons_captured < 1) {
-    publishEmptyMsg();
-  }
-
-  return ros::Time::now();
+  return theoretical_intensity;
 }
 //}
 
-/* publisherLoop //{ */
-void Timepix3::publisherLoop() {
+/* intensityUpdaterLoop //{ */
+void Timepix3::intensityUpdaterLoop() {
   while (!terminated_) {
     auto sim_start = ros::Time::now();
-    /* publishDiagnostics(); */
-    auto sim_end = simulate();
-    /* auto sim_end      = ros::Time::now(); */
+    {
+      std::scoped_lock lck(photon_loop_rate_mutex_);
+      photon_loop_rate_ = getIntensity();
+    }
+    publishDiagnostics();
+    /* auto sim_end = simulate(); */
+    auto sim_end = ros::Time::now();
+    (ros::Duration(max_message_window_) - (sim_end - sim_start)).sleep();
+  }
+}
+//}
+
+/* photonGeneratorLoop //{ */
+void Timepix3::photonGeneratorLoop() {
+  while (!terminated_) {
+    auto   sim_start = ros::Time::now();
+    double rate      = 1.0;
+    {
+      std::scoped_lock lck(photon_loop_rate_mutex_);
+      rate = photon_loop_rate_;
+    }
+    if (rate < 0.001) {
+      rate = 1.0;
+    }
+    publishSensorMsg(Eigen::Vector2i(0, 0), 100);
+    auto sim_end      = ros::Time::now();
     auto sim_duration = sim_end - sim_start;
-    (ros::Duration(max_message_window_) - sim_duration).sleep();
+    (ros::Duration(1.0 / rate) - sim_duration).sleep();
   }
 }
 //}
 
 /* calculateSideProperties //{ */
-std::vector<SideProperty> Timepix3::calculateSideProperties(SourceAbstraction &sa) {
+std::vector<SideProperty> Timepix3::calculateSideProperties(const SourceAbstraction &sa) {
   std::vector<SideProperty> ret;
   for (int idx = 0; idx < 6; idx++) {
     Eigen::Vector3d side_normal = (sides_[idx].b() - sides_[idx].a()).cross(sides_[idx].d() - sides_[idx].a());
@@ -551,6 +545,8 @@ std::vector<unsigned int> Timepix3::traceObstaclesId(SourceAbstraction &sa) {
 void Timepix3::onWorldLateUpdate() {
   ros::Time t_now = ros::Time::now();
   if (t_now > last_tf_time_) {
+
+    // publish sensor TF
     tf::Transform  transform;
     tf::Quaternion quat(model_->WorldPose().Rot().X(), model_->WorldPose().Rot().Y(), model_->WorldPose().Rot().Z(), model_->WorldPose().Rot().W());
     tf::Vector3    origin(model_->WorldPose().Pos().X(), model_->WorldPose().Pos().Y(), model_->WorldPose().Pos().Z());
@@ -558,6 +554,14 @@ void Timepix3::onWorldLateUpdate() {
     transform.setRotation(quat);
     transform_broadcaster_.sendTransform(tf::StampedTransform(transform, ros::Time::now(), global_frame_.str(), local_frame_.str()));
     last_tf_time_ = ros::Time::now();
+
+    // update source abstractions
+    {
+      std::scoped_lock lock(sources_mutex_);
+      for (auto &source : sources_) {
+        source.setSideProperties(calculateSideProperties(source));
+      }
+    }
   }
 }
 //}
@@ -618,20 +622,22 @@ void Timepix3::publishEmptyMsg() {
 /* publishDiagnostics //{ */
 void Timepix3::publishDiagnostics() {
 
+
   gazebo_rad_msgs::Timepix3Diagnostics msg;
-  msg.stamp       = ros::Time::now();
-  msg.gazebo_id   = model_->GetId();
-  msg.material    = material_;
-  msg.size.x      = size_.X();
-  msg.size.y      = size_.Y();
-  msg.size.z      = size_.Z();
-  msg.world_pos.x = model_->WorldPose().Pos().X();
-  msg.world_pos.y = model_->WorldPose().Pos().Y();
-  msg.world_pos.z = model_->WorldPose().Pos().Z();
-  msg.world_rot.w = model_->WorldPose().Rot().W();
-  msg.world_rot.x = model_->WorldPose().Rot().X();
-  msg.world_rot.y = model_->WorldPose().Rot().Y();
-  msg.world_rot.z = model_->WorldPose().Rot().Z();
+  msg.stamp                = ros::Time::now();
+  msg.gazebo_id            = model_->GetId();
+  msg.material             = material_;
+  msg.simulation_loop_rate = photon_loop_rate_;
+  msg.size.x               = size_.X();
+  msg.size.y               = size_.Y();
+  msg.size.z               = size_.Z();
+  msg.world_pos.x          = model_->WorldPose().Pos().X();
+  msg.world_pos.y          = model_->WorldPose().Pos().Y();
+  msg.world_pos.z          = model_->WorldPose().Pos().Z();
+  msg.world_rot.w          = model_->WorldPose().Rot().W();
+  msg.world_rot.x          = model_->WorldPose().Rot().X();
+  msg.world_rot.y          = model_->WorldPose().Rot().Y();
+  msg.world_rot.z          = model_->WorldPose().Rot().Z();
 
   /* add sources //{ */
   for (auto s = sources_.begin(); s != sources_.end(); s++) {
