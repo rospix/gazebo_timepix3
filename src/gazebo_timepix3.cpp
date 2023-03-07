@@ -73,6 +73,7 @@ private:
   double air_density_;
   double max_message_window_ = 0.5;
   double photon_loop_rate_   = 1.0;
+  double max_publish_rate_   = 150;
 
   unsigned long sequence_num_ = 0;
 
@@ -110,7 +111,6 @@ private:
   void publishEmptyMsg();
 
   double getIntensity();
-  /* ros::Time simulate(); */
 
   std::vector<SideProperty> calculateSideProperties(const SourceAbstraction &sa);
 
@@ -395,15 +395,10 @@ double Timepix3::getIntensity() {
 
   double theoretical_intensity = 0;
   for (auto source = sources_.begin(); source != sources_.end(); source++) {
-    // get num of photons to be simulated
-    // trace obstacles
-    Eigen::Vector3d        source_pos               = source->getRelativePosition();
-    mrs_lib::geometry::Ray r                        = mrs_lib::geometry::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
-    double                 environment_transmission = traceEnvironmentTransmission(*source);
-
-    /* std::cout << "Environment transmission: " << environment_transmission << std::endl; */
-
-    std::vector<SideProperty> side_properties = source->getSideProperties();
+    Eigen::Vector3d           source_pos               = source->getRelativePosition();
+    mrs_lib::geometry::Ray    r                        = mrs_lib::geometry::Ray::twopointCast(Eigen::Vector3d::Zero(), source_pos);
+    double                    environment_transmission = traceEnvironmentTransmission(*source);
+    std::vector<SideProperty> side_properties          = source->getSideProperties();
     for (auto side = side_properties.begin(); side != side_properties.end(); side++) {
       theoretical_intensity += (side->second * environment_transmission);
     }
@@ -421,7 +416,6 @@ void Timepix3::intensityUpdaterLoop() {
       photon_loop_rate_ = getIntensity();
     }
     publishDiagnostics();
-    /* auto sim_end = simulate(); */
     auto sim_end = ros::Time::now();
     (ros::Duration(max_message_window_) - (sim_end - sim_start)).sleep();
   }
@@ -432,18 +426,22 @@ void Timepix3::intensityUpdaterLoop() {
 void Timepix3::photonGeneratorLoop() {
   while (!terminated_) {
     auto   sim_start = ros::Time::now();
-    double rate      = 1.0;
+    double rate;
     {
       std::scoped_lock lck(photon_loop_rate_mutex_);
-      rate = photon_loop_rate_;
+      rate = std::min(photon_loop_rate_, max_publish_rate_);
     }
-    if (rate < 0.001) {
-      rate = 1.0;
+    if (rate < 0.0001) {
+      publishEmptyMsg();
+      auto sim_end      = ros::Time::now();
+      auto sim_duration = sim_end - sim_start;
+      (ros::Duration(max_message_window_) - sim_duration).sleep();
+    } else {
+      publishSensorMsg(Eigen::Vector2i(0, 0), 0.67);
+      auto sim_end      = ros::Time::now();
+      auto sim_duration = sim_end - sim_start;
+      (ros::Duration(1.0 / rate) - sim_duration).sleep();
     }
-    publishSensorMsg(Eigen::Vector2i(0, 0), 100);
-    auto sim_end      = ros::Time::now();
-    auto sim_duration = sim_end - sim_start;
-    (ros::Duration(1.0 / rate) - sim_duration).sleep();
   }
 }
 //}
